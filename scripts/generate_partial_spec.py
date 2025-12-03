@@ -7,10 +7,10 @@ import copy
 from pathlib import Path
 from typing import Any
 
-# --- Try to import YAML, but it's not critical ---
+# --- Import PyYAML ---
 try:
     import yaml
-except Exception:
+except ImportError:
     yaml = None
 
 # --- Helper Functions ---
@@ -18,16 +18,34 @@ except Exception:
 def _is_int_str(s: str) -> bool:
     return re.fullmatch(r'\d+', (s or '')) is not None
 
-def load_json(path: str):
-    """Loads a JSON file from the given string path."""
-    try:
-        with open(path, 'r', encoding='utf-8-sig') as f:
-            return json.load(f)
-    except FileNotFoundError:
+def load_spec_file(path: str):
+    """
+    Smart loader: Loads JSON or YAML based on file extension.
+    Requires PyYAML for .yaml/.yml files.
+    """
+    path_obj = Path(path)
+    if not path_obj.exists():
         print(f"Error: File not found at {path}", file=sys.stderr)
         return None
-    except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from {path}", file=sys.stderr)
+
+    try:
+        # 1. Check extension for YAML
+        if path_obj.suffix.lower() in ['.yaml', '.yml']:
+            if yaml is None:
+                print(f"Error: Cannot load {path}. PyYAML is not installed. Run 'pip install PyYAML'.", file=sys.stderr)
+                sys.exit(1)
+            with open(path, 'r', encoding='utf-8') as f:
+                print(f"📂 Loading YAML file: {path}")
+                return yaml.safe_load(f)
+        
+        # 2. Default to JSON for .json or others
+        else:
+            with open(path, 'r', encoding='utf-8-sig') as f:
+                print(f"📂 Loading JSON file: {path}")
+                return json.load(f)
+
+    except Exception as e:
+        print(f"Error: Could not parse file {path}. Reason: {e}", file=sys.stderr)
         return None
 
 def save_yaml(obj, path: str):
@@ -36,7 +54,6 @@ def save_yaml(obj, path: str):
         with open(path, 'w', encoding='utf-8') as f:
             yaml.safe_dump(obj, f, sort_keys=False, allow_unicode=True)
     else:
-        # Fallback to JSON if YAML not installed
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(obj, f, indent=2, ensure_ascii=False)
 
@@ -140,15 +157,15 @@ def apply_diff_item_robust(new_spec: dict, item: dict, remove_actually: bool = F
 
 # --- Core Logic Functions ---
 
-def load_baseline_operations(pipeline_workspace: Path) -> set:
+def load_baseline_operations(baseline_path: Path) -> set:
     """
     Loads the baseline spec and returns a set of all defined API operations
-    in the format 'METHOD@/path/string' (e.g., 'GET@/v1/members-info/{id}').
+    in the format 'METHOD@/path/string'.
     """
-    baseline_path = pipeline_workspace / "swagger_baseline.json"
     print(f"Loading legacy baseline from: {baseline_path}")
     
-    baseline_spec = load_json(str(baseline_path))
+    # CHANGED: Use the universal loader instead of load_json
+    baseline_spec = load_spec_file(str(baseline_path))
     legacy_ops = set()
     
     if baseline_spec and "paths" in baseline_spec:
@@ -167,22 +184,18 @@ def load_baseline_operations(pipeline_workspace: Path) -> set:
     return set()
 
 def get_key_from_loc(loc_str: str) -> str:
-    """Converts a location string 'paths./v1.get' into an op_key 'GET@/v1'"""
     if loc_str and loc_str.startswith("paths."):
         tokens = loc_str.split('.')
-        if len(tokens) >= 3: # paths./path.method
+        if len(tokens) >= 3:
             path_string = tokens[1]
             method = tokens[2].upper()
             return f"{method}@{path_string}"
-        elif len(tokens) == 2: # paths./path
+        elif len(tokens) == 2:
             path_string = tokens[1]
             return f"PATH_ONLY@{path_string}"
     return None
 
 def build_new_spec(diff: Any, legacy_ops: set, remove_actually: bool = False):
-    """
-    Builds a new spec containing only non-legacy paths from the diff.
-    """
     new_spec = {
         "openapi": "3.0.0",
         "info": {"title": "Changed-Only API Spec", "version": "1.0.0"},
@@ -237,10 +250,6 @@ def build_new_spec(diff: Any, legacy_ops: set, remove_actually: bool = False):
     return new_spec
 
 def sync_responses_from_base(new_spec: dict, source_spec: dict = None, dest_spec: dict = None):
-    """
-    Restores $ref-based schemas from the base spec to replace inline
-    schemas that come from the diff tool.
-    """
     base_spec = dest_spec or source_spec
     if not isinstance(base_spec, dict):
         print("No base spec available for syncing responses.")
@@ -262,21 +271,17 @@ def sync_responses_from_base(new_spec: dict, source_spec: dict = None, dest_spec
 
             base_op = base_path_item.get(method)
             if isinstance(base_op, dict):
-                # Sync Responses
                 base_responses = base_op.get("responses")
                 if isinstance(base_responses, dict) and base_responses:
                     op["responses"] = copy.deepcopy(base_responses)
                     print(f"Synced responses for {method.upper()} {path} from base spec.")
                 
-                # Sync RequestBody
                 base_request_body = base_op.get("requestBody")
                 if isinstance(base_request_body, dict) and base_request_body:
                     op["requestBody"] = copy.deepcopy(base_request_body)
                     print(f"Synced requestBody for {method.upper()} {path} from base spec.")
 
-
 def ensure_operations_have_responses(spec: dict, dest_spec: dict = None, source_spec: dict = None):
-    """Fallback to ensure all ops have at least a default response."""
     op_methods = {"get","put","post","delete","options","head","patch","trace"}
     for path, path_item in (spec.get('paths') or {}).items():
         if not isinstance(path_item, dict):
@@ -315,7 +320,6 @@ def ensure_operations_have_responses(spec: dict, dest_spec: dict = None, source_
             }
 
 def find_all_refs(obj: Any, found_refs_set: set):
-    """Recursively finds all $ref values in a dict or list."""
     if isinstance(obj, dict):
         if "$ref" in obj and isinstance(obj["$ref"], str):
             found_refs_set.add(obj["$ref"])
@@ -326,10 +330,6 @@ def find_all_refs(obj: Any, found_refs_set: set):
             find_all_refs(item, found_refs_set)
 
 def build_required_components(new_spec: dict, base_spec: dict):
-    """
-    Builds a new components block containing only schemas that are
-    transitively referenced by the paths.
-    """
     try:
         base_schemas = base_spec["components"]["schemas"]
     except (KeyError, TypeError, AttributeError):
@@ -372,36 +372,61 @@ def build_required_components(new_spec: dict, base_spec: dict):
 # --- Main Execution Block ---
 
 def main():
-    # 1. Set up paths from environment variables
-    artifact_dir_str = os.environ.get('BUILD_ARTIFACTSTAGINGDIRECTORY') or os.environ.get('BUILD_ARTIFACTSTAGINGDIRECTORY'.upper()) or r"."
-    pipeline_workspace_str = os.environ.get('PIPELINE_WORKSPACE') or os.environ.get('PIPELINE_WORKSPACE'.upper()) or r"."
+    # 1. Determine Paths
+    # artifact_dir_str = os.environ.get('BUILD_ARTIFACTSTAGINGDIRECTORY') or os.environ.get('BUILD_ARTIFACTSTAGINGDIRECTORY'.upper()) or r"."
+    # pipeline_workspace_str = os.environ.get('PIPELINE_WORKSPACE') or os.environ.get('PIPELINE_WORKSPACE'.upper()) or r"."
 
-    artifact_dir = Path(artifact_dir_str)
-    pipeline_workspace = Path(pipeline_workspace_str)
+    # artifact_dir = Path(artifact_dir_str)
+    # pipeline_workspace = Path(pipeline_workspace_str)
+
+    # 1. Determine Paths
+    # In GitHub Actions, we work in the current directory (".")
+    # If we ever need to support ADO again, we can add those checks back.
+    current_dir = Path(".")
+    
+    artifact_dir = current_dir
+    pipeline_workspace = current_dir
+
+    # CHANGED: Handle dynamic baseline filename from command line arguments
+    # Usage: python script.py [baseline_filename]
+    baseline_filename = "swagger_baseline.json" # Default
+    if len(sys.argv) > 1:
+        baseline_filename = sys.argv[1]
+    
+    # We look for the baseline in the pipeline workspace (where the workflow downloaded it)
+    baseline_path = pipeline_workspace / baseline_filename
 
     diff_path = artifact_dir / "diff.json"
     out_json = artifact_dir / "partial_spec.json"
     out_yaml = artifact_dir / "partial_spec.yaml"
-    main_spec_path = artifact_dir / "swagger_main.json"
-    head_spec_path = artifact_dir / "swagger_head.json"
+    
+    # CHANGED: Fallback logic for Main/Head specs.
+    # The workflow might have saved them as .yaml OR .json. We check both.
+    def get_existing_path(base_name_no_ext):
+        p_yaml = artifact_dir / f"{base_name_no_ext}.yaml"
+        p_json = artifact_dir / f"{base_name_no_ext}.json"
+        if p_yaml.exists(): return p_yaml
+        if p_json.exists(): return p_json
+        return p_json # Default return (might not exist)
 
-    print("Artifact staging directory:", artifact_dir_str)
-    print("Pipeline workspace directory:", pipeline_workspace_str)
-    print("Looking for diff file at:", str(diff_path))
-    print("Baseline spec will be loaded from:", str(pipeline_workspace / "swagger_baseline.json"))
+    main_spec_path = get_existing_path("swagger_main")
+    head_spec_path = get_existing_path("swagger_head")
 
-    # 2. Load Diff File
+    print(f"Baseline spec will be loaded from: {baseline_path}")
+    print(f"Main spec path: {main_spec_path}")
+    print(f"Head spec path: {head_spec_path}")
+
+    # 2. Load Diff File (Always JSON)
     if not diff_path.exists() or diff_path.stat().st_size == 0:
         print("No diff.json found or file is empty. Skipping partial spec generation.")
         sys.exit(0)
 
     txt = diff_path.read_text(encoding='utf-8-sig').strip()
     if not txt:
-        print("diff.json is empty after reading. Exiting.")
         sys.exit(0)
 
     if txt.startswith("No changes found between the two specifications"):
-        print("No API changes found — writing empty partial spec and exiting successfully.")
+        print("No API changes found — writing empty partial spec.")
         empty_spec = {
             "openapi": "3.0.0",
             "info": {"title": "Changed-Only API Spec", "version": "1.0.0"},
@@ -410,54 +435,42 @@ def main():
         }
         out_json.write_text(json.dumps(empty_spec, indent=2, ensure_ascii=False), encoding='utf-8')
         save_yaml(empty_spec, str(out_yaml))
-        print(f"Generated empty partial spec: {out_json}")
         sys.exit(0)
         
-    def load_json_from_text(txt):
-        if not txt:
-            return {}
-        i = txt.find('{')
-        if i > 0:
-            txt = txt[i:]
-        return json.loads(txt)
-
     try:
-        diff_data = load_json_from_text(txt)
+        diff_data = json.loads(txt[txt.find('{'):]) if '{' in txt else {}
     except Exception as e:
         print("Failed to parse diff.json:", e, file=sys.stderr)
-        print("Raw diff content (first 400 chars):", file=sys.stderr)
-        print(txt[:400], file=sys.stderr)
         sys.exit(1)
 
-    # 3. Load all necessary specs
-    legacy_ops = load_baseline_operations(pipeline_workspace)
-    source_spec = load_json(str(main_spec_path)) # swagger_main.json
-    dest_spec = load_json(str(head_spec_path))   # swagger_head.json
+    # 3. Load all specs using the new Universal Loader
+    # This works for both JSON and YAML now.
+    legacy_ops = load_baseline_operations(baseline_path)
+    source_spec = load_spec_file(str(main_spec_path))
+    dest_spec = load_spec_file(str(head_spec_path))
 
     if not dest_spec:
-        print(f"Error: Could not load head spec from {head_spec_path}. Cannot continue.", file=sys.stderr)
+        print(f"Error: Could not load head spec from {head_spec_path}", file=sys.stderr)
         sys.exit(1)
 
-    # 4. Run the script logic in the correct order
+    # 4. Run Logic
     print("Step 1: Building spec from diff and filtering legacy ops...")
     new_spec = build_new_spec(diff_data, legacy_ops=legacy_ops, remove_actually=False)
 
-    print("Step 2: Syncing responses and requestBodies from head spec to restore $refs...")
+    print("Step 2: Syncing responses and requestBodies...")
     sync_responses_from_base(new_spec, source_spec=source_spec, dest_spec=dest_spec)
 
-    print("Step 3: Ensuring all operations have a response block...")
+    print("Step 3: Ensuring operations have responses...")
     ensure_operations_have_responses(new_spec, dest_spec=dest_spec, source_spec=source_spec)
 
-    print("Step 4: Building the minimal required components/schemas block...")
+    print("Step 4: Building minimal components...")
     build_required_components(new_spec, base_spec=dest_spec)
 
-    # 5. Save the final, correct, and minimal spec
+    # 5. Save
     print("Step 5: Saving final partial spec...")
     out_json.write_text(json.dumps(new_spec, indent=2, ensure_ascii=False), encoding='utf-8')
     save_yaml(new_spec, str(out_yaml))
 
-    print(f"Partial spec saved: {out_json}")
-    print(f"Partial spec (YAML) saved: {out_yaml}")
     sys.exit(0)
 
 if __name__ == "__main__":
