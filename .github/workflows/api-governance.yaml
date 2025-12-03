@@ -316,7 +316,11 @@ jobs:
       # ---------------------------------------------------------
       - name: Install Dependencies
         run: |
+          # Install openapi-diff locally (no -g) for scripting
+          npm install openapi-diff
+          # Install Spectral globally
           npm install -g @stoplight/spectral-cli
+          # Install Python YAML support
           pip install PyYAML
 
       # ---------------------------------------------------------
@@ -363,33 +367,56 @@ jobs:
             --repo KushalBang456/API-Governance-POC \
             --pattern "${{ inputs.baseline_filename }}"
 
-      # ---------------------------------------------------------
-      # 6. Generate Diff
+# ---------------------------------------------------------
+      # 6. Generate Diff (Using NPM Inline Script)
       # ---------------------------------------------------------
       - name: Generate Diff
         run: |
-          # 1. Detect extension
+          # 1. Detect extension again
           INPUT="${{ inputs.swagger_path }}"
           EXT="${INPUT##*.}"
           
           echo "🔍 Generating diff between swagger_main.$EXT and swagger_head.$EXT..."
           
-          # 2. Run the Official Java Tool via Docker
-          # We mount the current directory ($PWD) to /specs inside the container
-          # We tell it to output JSON to diff.json
-          docker run --rm \
-            -v "$PWD":/specs \
-            openapitools/openapi-diff:latest \
-            --json /specs/diff.json \
-            /specs/swagger_main.$EXT /specs/swagger_head.$EXT
-          
-          # 3. Verify it worked
+          # 2. Run inline Node script
+          # We use double quotes for the node command so Bash variables ($EXT) expand
+          node -e "
+            const fs = require('fs');
+            const diff = require('openapi-diff');
+            
+            // Bash variables expand here to actual filenames (e.g., swagger_main.yaml)
+            const oldFile = 'swagger_main.$EXT';
+            const newFile = 'swagger_head.$EXT';
+            
+            console.log('Reading files: ' + oldFile + ' and ' + newFile);
+
+            try {
+              const oldSpec = fs.readFileSync(oldFile, 'utf8');
+              const newSpec = fs.readFileSync(newFile, 'utf8');
+              
+              diff.diffSpecs({
+                sourceSpec: { content: oldSpec, location: 'legacy', format: 'openapi3' },
+                destinationSpec: { content: newSpec, location: 'new', format: 'openapi3' }
+              }).then(result => {
+                fs.writeFileSync('diff.json', JSON.stringify(result, null, 2));
+                console.log('✅ diff.json created successfully');
+              });
+            } catch (err) {
+              console.error('❌ Error running diff:', err);
+              process.exit(1);
+            }
+          "
+
+      # --- DEBUG STEP: PRINT DIFF ---
+      - name: 🐞 DEBUG - Print Diff.json
+        run: |
+          echo "=== CONTENT OF DIFF.JSON ==="
           if [ -f "diff.json" ]; then
-            echo "✅ Diff generated successfully."
+            cat diff.json
           else
-            echo "❌ Failed to generate diff.json"
-            exit 1
+            echo "❌ diff.json missing!"
           fi
+          echo "============================"
 
       # ---------------------------------------------------------
       # 7. Run Logic (Python)
@@ -398,6 +425,17 @@ jobs:
         run: |
           python governance-hub/scripts/generate_partial_spec.py "${{ inputs.baseline_filename }}"
 
+      # --- DEBUG STEP: PRINT PARTIAL SPEC ---
+      - name: 🐞 DEBUG - Print Partial Spec
+        run: |
+          echo "=== CONTENT OF PARTIAL_SPEC.JSON ==="
+          if [ -f "partial_spec.json" ]; then
+            cat partial_spec.json
+          else
+            echo "⚠️ partial_spec.json not found!"
+          fi
+          echo "===================================="
+      
       # ---------------------------------------------------------
       # 8. Linting (Strict)
       # ---------------------------------------------------------
