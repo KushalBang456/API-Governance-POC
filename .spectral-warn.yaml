@@ -1,0 +1,122 @@
+extends: "spectral:oas"
+
+rules:
+  info-contact: off
+  contact-properties: off
+  info-description: off
+  info-license: off
+  license-url: off
+  operation-description: off
+  operation-tag-defined: off
+  operation-operationId: off
+  oas3-api-servers: off
+  oas3-unused-component: off
+  openapi-tags: off
+  
+  # Advisory/Warning versions of strict rules
+  path-camel-case:
+    description: "Path segments should be camelCase"
+    message: "Path '{{path}}' is not camelCase"
+    severity: warn
+    given: $.paths[?(!@property.match(/\{[^}]+\}/) && @['x-removed'] != true)]~
+    then:
+      function: casing
+      functionOptions:
+        type: camel
+        separator:
+          char: "/"
+          allowLeading: true
+
+  parameter-naming-camelCase:
+    description: "Parameters (path, query, header) should use camelCase"
+    message: "Parameter name '{{name}}' is not camelCase"
+    severity: warn
+    given:
+      - $.paths[*][*].parameters[*]
+      - $.paths[*].parameters[*]
+      - $.components.parameters[*]
+    then:
+      field: name
+      function: pattern
+      functionOptions:
+        match: '^[a-z][a-zA-Z0-9]*$'
+
+  path-versioning:
+    description: "Paths should include a major version (e.g. /v1/...)"
+    message: "Path '{path}' should start with /v<number>/"
+    severity: warn
+    given: "$.paths"
+    then:
+      field: "@key"
+      function: pattern
+      functionOptions:
+        match: '^/v[0-9]+/.*$'
+
+  tag-pascal-case:
+    description: "Tags should be PascalCase"
+    message: "Tag '{{value}}' is not PascalCase"
+    severity: warn
+    given: $.paths.*.*.tags[*]
+    then:
+      function: casing
+      functionOptions:
+        type: pascal
+
+  require-json-body:
+    description: "Responses should include media-type application/json"
+    message: "Response for code does not include media-type application/json"
+    severity: warn
+    formats:
+      - oas3
+    given:
+      - $.paths[*][*].responses[*].content
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          required:
+            - application/json
+
+  response-envelope-has-code-and-data:
+    description: "2xx JSON responses should have top-level 'code' and 'data' properties"
+    message: "2xx JSON response should define top-level 'code' and 'data' properties in its JSON schema"
+    severity: warn
+    formats:
+      - oas3
+    resolved: true
+    given:
+      - >-
+        $.paths[*][*].responses[?(@property >= '200' && @property < '300' && @property != '204')]
+          .content["application/json"].schema
+    then:
+      - field: properties.code
+        function: truthy
+      - field: properties.data
+        function: truthy
+
+  common-response-has-code:
+    description: "CommonResponse should have 'code' property"
+    message: "Schema '{{property}}' should define a 'code' property"
+    severity: warn
+    given: $.components.schemas[?(@property.match(/CommonResponse$/))].properties
+    then:
+      field: code
+      function: truthy
+
+  common-response-has-data:
+    description: "CommonResponse should have 'data' property"
+    message: "Schema '{{property}}' should define a 'data' property"
+    severity: warn
+    given: $.components.schemas[?(@property.match(/CommonResponse$/))].properties
+    then:
+      field: data
+      function: truthy
+
+  no-content-response-no-body:
+    description: "204 responses should not have a response body"
+    message: "Response code '204' should not have a response body"
+    severity: warn
+    given: $.paths[*][*].responses['204'].content
+    then:
+      function: falsy

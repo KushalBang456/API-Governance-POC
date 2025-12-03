@@ -1,0 +1,1257 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "NB.MemberDomain.API",
+    "version": "1.0"
+  },
+  "paths": {
+    "/v1/lookup/PhoneTypes": {
+      "get": {
+        "tags": [
+          "Lookup"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/lookup/AddressTypes": {
+      "get": {
+        "tags": [
+          "Lookup"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/lookup/LanguageTypes": {
+      "get": {
+        "tags": [
+          "Lookup"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/lookup/EmailTypes": {
+      "get": {
+        "tags": [
+          "Lookup"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/lookup/CardStatuses": {
+      "get": {
+        "tags": [
+          "Lookup"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/lookup": {
+      "post": {
+        "tags": [
+          "Member"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberDetailsRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberDetailsRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberDetailsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/processoraffinity": {
+      "post": {
+        "tags": [
+          "Member"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessorAffinityRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessorAffinityRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessorAffinityRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/search": {
+      "post": {
+        "tags": [
+          "Member"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberLookupRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberLookupRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberLookupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/status/lookup": {
+      "post": {
+        "tags": [
+          "Member"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/cards/status": {
+      "patch": {
+        "tags": [
+          "Member"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberCardUpdateRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberCardUpdateRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberCardUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/cards/replacement": {
+      "post": {
+        "tags": [
+          "Member"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardReplacementRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardReplacementRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardReplacementRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/cardHistory": {
+      "post": {
+        "tags": [
+          "Member"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberCardHistoryRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberCardHistoryRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberCardHistoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/cardholderidentifier": {
+      "post": {
+        "tags": [
+          "Member"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentifierRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentifierRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentifierRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/address/{nhmemberId}": {
+      "get": {
+        "tags": [
+          "MemberAddress"
+        ],
+        "parameters": [
+          {
+            "name": "nhmemberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/address": {
+      "post": {
+        "tags": [
+          "MemberAddress"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAddressRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAddressRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAddressRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/email/{nhmemberId}": {
+      "get": {
+        "tags": [
+          "MemberEmail"
+        ],
+        "parameters": [
+          {
+            "name": "nhmemberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/email": {
+      "post": {
+        "tags": [
+          "MemberEmail"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCreateRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCreateRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/clientIndicators/{nhmemberId}": {
+      "get": {
+        "tags": [
+          "MemberIndicator"
+        ],
+        "parameters": [
+          {
+            "name": "nhmemberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/insurance/{nhmemberId}": {
+      "get": {
+        "tags": [
+          "MemberInsurance"
+        ],
+        "parameters": [
+          {
+            "name": "nhmemberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/insurance": {
+      "post": {
+        "tags": [
+          "MemberInsurance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InsuranceCreateRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InsuranceCreateRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/InsuranceCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/language/{nhmemberId}": {
+      "get": {
+        "tags": [
+          "MemberLanguage"
+        ],
+        "parameters": [
+          {
+            "name": "nhmemberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/language": {
+      "post": {
+        "tags": [
+          "MemberLanguage"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddLanguageRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddLanguageRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddLanguageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/phone/{nhmemberId}": {
+      "get": {
+        "tags": [
+          "MemberPhone"
+        ],
+        "parameters": [
+          {
+            "name": "nhmemberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/members/phone": {
+      "post": {
+        "tags": [
+          "MemberPhone"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberPhoneCreateRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberPhoneCreateRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberPhoneCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddLanguageRequest": {
+        "required": [
+          "auditUser",
+          "dataSource",
+          "insuranceCarrierID",
+          "language",
+          "languageTypeId",
+          "nhMemberID"
+        ],
+        "type": "object",
+        "properties": {
+          "insuranceCarrierID": {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          },
+          "nhMemberID": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "language": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "languageTypeId": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "dataSource": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "auditUser": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CardReplacementRequest": {
+        "type": "object",
+        "properties": {
+          "oldCardDetails": {
+            "$ref": "#/components/schemas/OldCardDetails"
+          },
+          "newCardDetails": {
+            "$ref": "#/components/schemas/NewCardDetails"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CardRequest": {
+        "required": [
+          "cardholderId",
+          "ordinal",
+          "tenantId"
+        ],
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardholderId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          },
+          "ordinal": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "cardholderAccountId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateAddressRequest": {
+        "required": [
+          "address1",
+          "addressTypeId",
+          "auditUser",
+          "dataSource",
+          "isAddressVerified",
+          "isPreferredAddress",
+          "nhMemberID",
+          "state",
+          "zipCode"
+        ],
+        "type": "object",
+        "properties": {
+          "nhMemberID": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "addressTypeId": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "address1": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "address2": {
+            "type": "string",
+            "nullable": true
+          },
+          "county": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "maxLength": 2,
+            "minLength": 2,
+            "type": "string"
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9]{4,5}$",
+            "type": "string"
+          },
+          "isPreferredAddress": {
+            "type": "boolean"
+          },
+          "phoneNumber": {
+            "pattern": "^\\d{10}$",
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$",
+            "type": "string",
+            "nullable": true
+          },
+          "isAddressVerified": {
+            "type": "boolean"
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "dataSource": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "auditUser": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailCreateRequest": {
+        "required": [
+          "auditUser",
+          "dataSource",
+          "email",
+          "emailTypeId",
+          "nhMemberID"
+        ],
+        "type": "object",
+        "properties": {
+          "nhMemberID": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "email": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "isPreferred": {
+            "type": "boolean"
+          },
+          "dataSource": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "emailTypeId": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "auditUser": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "IdentifierRequest": {
+        "required": [
+          "cardHolderId",
+          "customerId",
+          "tenantId"
+        ],
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "customerId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "cardHolderId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "InsuranceCreateRequest": {
+        "required": [
+          "auditUser",
+          "dataSource",
+          "insuranceCarrierID",
+          "insuranceEffectiveDate",
+          "insuranceEndDate",
+          "insuranceHealthPlanID",
+          "insuranceNumber",
+          "insuranceType",
+          "nhMemberID"
+        ],
+        "type": "object",
+        "properties": {
+          "insuranceCarrierID": {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          },
+          "insuranceNumber": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "nhMemberID": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "insuranceEffectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "insuranceEndDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "insuranceHealthPlanID": {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          },
+          "insuranceType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "insuranceVerificationStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "insuranceVerificationDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "medicaidNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "medicareNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "dataSource": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "auditUser": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MemberCardHistoryRequest": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardHolderId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cardholderAccountId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MemberCardUpdateRequest": {
+        "required": [
+          "cardholderId",
+          "cardStatus",
+          "ordinal",
+          "reason",
+          "tenantId"
+        ],
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardholderAccountId": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardholderId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          },
+          "ordinal": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "cardStatus": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "memo": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardStolenDateTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MemberDetailsRequest": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardholderAccountId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MemberLookupRequest": {
+        "type": "object",
+        "properties": {
+          "nhMemberID": {
+            "type": "string",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "insuranceNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "phoneNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "emailAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "carrierID": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "planID": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "sortBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MemberPhoneCreateRequest": {
+        "required": [
+          "auditUser",
+          "dataSource",
+          "isPreferred",
+          "nhMemberID",
+          "phoneNumber",
+          "phoneTypeID"
+        ],
+        "type": "object",
+        "properties": {
+          "nhMemberID": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "phoneNumber": {
+            "minLength": 1,
+            "pattern": "^\\d{10}$",
+            "type": "string"
+          },
+          "phoneTypeID": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "isPreferred": {
+            "type": "boolean"
+          },
+          "dataSource": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "auditUser": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NewCardDetails": {
+        "required": [
+          "cardholderAccountId",
+          "cardholderId",
+          "cardStatus",
+          "last4",
+          "ordinal",
+          "tenantId"
+        ],
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardholderId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          },
+          "ordinal": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "cardStatus": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "last4": {
+            "minLength": 1,
+            "pattern": "^(?!0000)\\d{4}$",
+            "type": "string"
+          },
+          "cardholderAccountId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OldCardDetails": {
+        "required": [
+          "cardholderAccountId",
+          "cardholderId",
+          "cardStatus",
+          "ordinal",
+          "reason",
+          "tenantId"
+        ],
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardholderId": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64"
+          },
+          "ordinal": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "cardStatus": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "memo": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardStolenDateTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cardholderAccountId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProcessorAffinityRequest": {
+        "type": "object",
+        "properties": {
+          "nhMemberId": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardholderAccountId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

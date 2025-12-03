@@ -1,0 +1,15 @@
+trigger: none
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+- task: UniversalPackages@0
+  displayName: 'Publish Backend Baseline'
+  inputs:
+    command: publish
+    publishDirectory: '$(Build.SourcesDirectory)/baselines'
+    vstsFeedPublish: 'API_Governance/api-baselines'
+    vstsFeedPackagePublish: 'memberdomain-legacy'
+    versionOption: custom
+    versionPublish: '1.0.0'
+    packagePublishDescription: 'MemberDomain legacy artifacts'

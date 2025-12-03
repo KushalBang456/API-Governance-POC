@@ -1,0 +1,314 @@
+# YAML template for API governance using Spectral and OpenAPI Diff
+# This file lives in: API_Governance/templates/api-governance.yml
+# This is the MASTER template. It is called by the "client" azure-pipelines.yml
+
+# 1. --- Define Parameters ---
+# These parameters are *received* from the client pipeline
+parameters:
+- name: SlnFile
+  type: string
+- name: ProjectFile
+  type: string
+- name: ProjectAssemblyName
+  type: string
+- name: TargetFramework
+  type: string
+- name: SwashbuckleVersion
+  type: string
+- name: SwaggerDocName
+  type: string
+- name: BaselinePackageName
+  type: string
+- name: DefaultTargetBranch
+  type: string
+  default: 'main'
+
+# 2. --- Define Steps ---
+# This is the 'steps:' block that is "pasted" into the client pipeline
+steps:
+# ---------------------------
+# 1. Generate swagger_head.json (from PR branch)
+# ---------------------------
+- task: PowerShell@2
+  displayName: 'Run repo-specific spec generator (PR Branch)'
+  inputs:
+    targetType: 'filePath'
+    pwsh: true
+    # DYNAMIC PATH: uses $(Build.Repository.Name)
+    filePath: '$(Build.SourcesDirectory)/$(Build.Repository.Name)/generate-spec.ps1' 
+    arguments: > 
+      -OutputFile $(Build.ArtifactStagingDirectory)/swagger_head.json
+      -SlnFile "${{ parameters.SlnFile }}"
+      -ProjectFile "${{ parameters.ProjectFile }}"
+      -ProjectAssemblyName "${{ parameters.ProjectAssemblyName }}"
+      -TargetFramework "${{ parameters.TargetFramework }}"
+      -SwashbuckleVersion "${{ parameters.SwashbuckleVersion }}"
+      -SwaggerDocName "${{ parameters.SwaggerDocName }}"
+    
+    workingDirectory: '$(Build.SourcesDirectory)/$(Build.Repository.Name)'
+
+# # temporary debug step
+# # ---------------------------
+# # 1.5 Save Script to Temp (Before Checkout)
+# # ---------------------------
+# - task: PowerShell@2
+#   displayName: 'Snapshot Script to Temp'
+#   inputs:
+#     targetType: 'inline'
+#     pwsh: true
+#     script: |
+#       $sourceScript = "$(Build.SourcesDirectory)/$(Build.Repository.Name)/generate-spec.ps1"
+#       $destScript   = "$(Agent.TempDirectory)/generate-spec.ps1"
+      
+#       Write-Host "Backing up script from $sourceScript to $destScript"
+#       Copy-Item -Path $sourceScript -Destination $destScript -Force
+
+  
+# ---------------------------
+# 2. Generate swagger_main.json (from TARGET branch)
+# ---------------------------
+# - task: PowerShell@2
+#   displayName: 'Checkout Target Branch (Dynamic)'
+#   inputs:
+#     targetType: 'inline'
+#     pwsh: true
+#     workingDirectory: '$(Build.SourcesDirectory)/$(Build.Repository.Name)'
+#     script: |
+#       $targetBranch = "$(System.PullRequest.TargetBranch)"
+#       $defaultBranch = "${{ parameters.DefaultTargetBranch }}"
+#       if ([string]::IsNullOrWhiteSpace($targetBranch)) { 
+#         $targetBranch = $defaultBranch
+#         Write-Warning "Manual Run detected. Using configured default: $targetBranch"
+#       }
+#       else { $targetBranch = $targetBranch -replace "^refs/heads/", "" }
+      
+#       Write-Host "🎯 Target Branch: $targetBranch"
+#       git fetch origin $targetBranch
+#       git checkout $targetBranch
+
+- task: PowerShell@2
+  displayName: 'Checkout Target Branch (Dynamic)'
+  inputs:
+    targetType: 'inline'
+    pwsh: true
+    workingDirectory: '$(Build.SourcesDirectory)/$(Build.Repository.Name)'
+    script: |
+      # --- CRITICAL FIX START ---
+      # DO NOT use "$(System.PullRequest.TargetBranch)" directly.
+      # Use the environment variable $env:SYSTEM_PULLREQUEST_TARGETBRANCH.
+      # This prevents the script from crashing during manual runs.
+      
+      $prBranch = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
+      $defaultBranch = "${{ parameters.DefaultTargetBranch }}"
+
+      # Check if PR branch variable is empty (Manual Run)
+      if ([string]::IsNullOrWhiteSpace($prBranch)) {
+          Write-Warning "⚠️ This is a Manual Run (Not a PR). Using configured default."
+          $targetBranch = $defaultBranch
+      }
+      else {
+          Write-Host "🚀 PR Trigger detected."
+          # Clean up 'refs/heads/' if present
+          $targetBranch = $prBranch -replace "^refs/heads/", ""
+      }
+      # --- CRITICAL FIX END ---
+
+      Write-Host "🎯 Checkout Target Branch: $targetBranch"
+      
+      # Git commands
+      git fetch origin $targetBranch
+      git checkout $targetBranch
+
+- task: PowerShell@2
+  displayName: 'Run repo-specific spec generator (Target Branch)'
+  inputs:
+    targetType: 'filePath'
+    pwsh: true
+    filePath: '$(Build.SourcesDirectory)/$(Build.Repository.Name)/generate-spec.ps1' 
+    arguments: > 
+      -OutputFile $(Build.ArtifactStagingDirectory)/swagger_main.json
+      -SlnFile "${{ parameters.SlnFile }}"
+      -ProjectFile "${{ parameters.ProjectFile }}"
+      -ProjectAssemblyName "${{ parameters.ProjectAssemblyName }}"
+      -TargetFramework "${{ parameters.TargetFramework }}"
+      -SwashbuckleVersion "${{ parameters.SwashbuckleVersion }}"
+      -SwaggerDocName "${{ parameters.SwaggerDocName }}"
+    
+    workingDirectory: '$(Build.SourcesDirectory)/$(Build.Repository.Name)'
+
+# - task: PowerShell@2
+#   displayName: 'Run repo-specific spec generator (Target Branch)'
+#   inputs:
+#     targetType: 'filePath'
+#     pwsh: true
+#     # 👇 USE THE COPIED SCRIPT HERE
+#     filePath: '$(Agent.TempDirectory)/generate-spec.ps1' 
+#     arguments: > 
+#       -OutputFile $(Build.ArtifactStagingDirectory)/swagger_main.json
+#       -SlnFile "${{ parameters.SlnFile }}"
+#       -ProjectFile "${{ parameters.ProjectFile }}"
+#       -ProjectAssemblyName "${{ parameters.ProjectAssemblyName }}"
+#       -TargetFramework "${{ parameters.TargetFramework }}"
+#       -SwashbuckleVersion "${{ parameters.SwashbuckleVersion }}"
+#       -SwaggerDocName "${{ parameters.SwaggerDocName }}"
+    
+#     # 👇 KEEP THIS POINTING TO REPO ROOT so it finds the solution file
+#     workingDirectory: '$(Build.SourcesDirectory)/$(Build.Repository.Name)'
+
+# - script: |
+#     echo "=== Folder layout ==="
+#     dir $(Build.SourcesDirectory) /s
+#   displayName: 'Show workspace contents'
+
+- task: PowerShell@2
+  displayName: 'Show workspace contents'
+  inputs:
+    targetType: 'inline'
+    pwsh: true
+    script: |
+      Write-Host "=== Folder layout ==="
+      Get-ChildItem -Path "$(Build.SourcesDirectory)" -Recurse | Select-Object FullName
+
+
+# ---------------------------
+# 3. Install diff tools
+# ---------------------------
+- script: |
+    echo "Installing correct OpenAPI Diff tool..."
+    npm install -g openapi-diff
+    # echo "Installing Python dependencies..."
+    # pip install deepdiff
+  displayName: 'Install OpenAPI Diff and Python libs'
+
+# ---------------------------
+# 4. Run OpenAPI Diff
+# ---------------------------
+- task: PowerShell@2
+  displayName: 'Generate OpenAPI Diff'
+  inputs:
+    targetType: 'inline'
+    pwsh: true
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $swaggerMainSource = "$(Build.ArtifactStagingDirectory)/swagger_main.json"
+      $swaggerHeadSource = "$(Build.ArtifactStagingDirectory)/swagger_head.json"
+      $diffOutput = "$(Build.ArtifactStagingDirectory)/diff.json"
+
+      # Check if files exist before copying
+      if (-not (Test-Path $swaggerMainSource)) { Write-Error "❌ swagger_main.json not found!"; exit 1 }
+      if (-not (Test-Path $swaggerHeadSource)) { Write-Error "❌ swagger_head.json not found!"; exit 1 }
+
+      Copy-Item -Path $swaggerMainSource -Destination "./swagger_main.json" -Force
+      Copy-Item -Path $swaggerHeadSource -Destination "./swagger_head.json" -Force
+      
+      Write-Host "Running OpenAPI Diff via CLI..."
+      & openapi-diff ./swagger_main.json ./swagger_head.json | Out-File -FilePath $diffOutput -Encoding utf8
+      
+      Write-Host "✅ OpenAPI Diff written to: $diffOutput"
+      Get-Content $diffOutput | Write-Host
+      exit 0
+
+# ---------------------------
+# 5. Download and Prepare Baseline (NEW STEP)
+# ---------------------------
+# FIRST - Use the Azure CLI to reliably download the package
+- task: PowerShell@2
+  displayName: 'Download API Baseline Artifact (via CLI)'
+  inputs:
+    pwsh: true
+    targetType: 'inline'
+    script: |
+      Write-Host "Installing/Updating Azure DevOps CLI extension..."
+      az extension add --name azure-devops --upgrade --only-show-errors
+      
+      $orgUrl = $env:SYSTEM_TEAMFOUNDATIONCOLLECTIONURI
+      $projectName = "API_Governance" # The project where the feed *lives*
+      $feedName = "api-baselines"
+      $packageName = "${{ parameters.BaselinePackageName }}"
+      $version = "1.0.0"
+      $downloadDir = "$(Pipeline.Workspace)/baseline_package"
+
+      Write-Host "Downloading package '$packageName' from feed '$feedName'..."
+      
+      # This is the modern, reliable command to download the artifact
+      az artifacts universal download `
+        --organization $orgUrl `
+        --project $projectName `
+        --scope project `
+        --feed $feedName `
+        --name $packageName `
+        --version $version `
+        --path $downloadDir
+        
+      Write-Host "Successfully downloaded baseline to $downloadDir"
+  env:
+    # This securely passes your pipeline's token to the az login command
+    AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+# SECOND - Keep your PowerShell script to rename the downloaded file
+- task: PowerShell@2
+  displayName: 'Rename baseline file'
+  inputs:
+    pwsh: true
+    targetType: 'inline'
+    script: |
+      # Find the JSON file inside the package folder
+      $file = Get-ChildItem -Path "$(Pipeline.Workspace)/baseline_package" -Filter "*.json" | Select-Object -First 1
+      
+      if ($file) {
+        # Move it to the root of the Pipeline Workspace
+        $newPath = "$(Pipeline.Workspace)/swagger_baseline.json"
+        Move-Item -Path $file.FullName -Destination $newPath -Force
+        Write-Host "Moved and renamed baseline to: $newPath"
+      } else {
+        Write-Error "❌ Could not find a downloaded baseline JSON file in $(Pipeline.Workspace)/baseline_package"
+        exit 1
+      }
+
+# ---------------------------
+# 6. Generate Partial Spec (Python file)
+# ---------------------------
+- task: PythonScript@0
+  displayName: 'Create Partial OpenAPI Spec from Diff (no spectral)'
+  inputs:
+    scriptSource: 'filePath' # <-- Changed from 'inline'
+    # This path works because the API_Governance repo is checked out
+    # to $(Build.SourcesDirectory)/API_Governance
+    scriptPath: '$(Build.SourcesDirectory)/API_Governance/scripts/generate_partial_spec.py'
+
+# ---------------------------
+# 7. PASS 1: Lint Partial Spec (Strict - Errors)
+#    This checks *only* the new/changed endpoints for blocking errors.
+# ---------------------------
+- task: PowerShell@2
+  displayName: 'PASS 1: Lint Partial Spec (Strict) & Post Errors'
+  inputs:
+    targetType: 'filePath'
+    pwsh: true
+    filePath: '$(Build.SourcesDirectory)/API_Governance/scripts/post_spectral_comments.ps1'
+    arguments: > # Pass arguments to the script
+      -SpecFile $(Build.ArtifactStagingDirectory)/partial_spec.json
+      -RulesetFile $(Build.SourcesDirectory)/API_Governance/.spectral.yaml
+      -TaskID Strict
+      -TaskTitle "NB Governance 🛑 Strict Checks (New Code)"
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+# ---------------------------
+# 8. PASS 2: Lint Full Spec (Advisory - Warnings)
+#    This checks the *entire* PR-branch spec for advisory warnings.
+# ---------------------------
+- task: PowerShell@2
+  displayName: 'PASS 2: Lint Full Spec (Advisory) & Post Warnings'
+  condition: always() # Run even if Pass 1 fails, to get all feedback
+  inputs:
+    targetType: 'filePath'
+    pwsh: true
+    filePath: '$(Build.SourcesDirectory)/API_Governance/scripts/post_spectral_comments.ps1' # Re-using the same script
+    arguments: > 
+      -SpecFile $(Build.ArtifactStagingDirectory)/swagger_head.json
+      -RulesetFile $(Build.SourcesDirectory)/API_Governance/.spectral-warn.yaml
+      -TaskID Advisory
+      -TaskTitle "NB Governance ⚠️ Advisory Checks (Full Spec)"
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
