@@ -316,7 +316,7 @@ jobs:
       # ---------------------------------------------------------
       - name: Install Dependencies
         run: |
-          npm install -g openapi-diff @stoplight/spectral-cli
+          npm install -g @stoplight/spectral-cli
           pip install PyYAML
 
       # ---------------------------------------------------------
@@ -368,12 +368,28 @@ jobs:
       # ---------------------------------------------------------
       - name: Generate Diff
         run: |
-          # Re-detect extension
+          # 1. Detect extension
           INPUT="${{ inputs.swagger_path }}"
           EXT="${INPUT##*.}"
           
           echo "🔍 Generating diff between swagger_main.$EXT and swagger_head.$EXT..."
-          openapi-diff "swagger_main.$EXT" "swagger_head.$EXT" --format json > diff.json
+          
+          # 2. Run the Official Java Tool via Docker
+          # We mount the current directory ($PWD) to /specs inside the container
+          # We tell it to output JSON to diff.json
+          docker run --rm \
+            -v "$PWD":/specs \
+            openapitools/openapi-diff:latest \
+            --json /specs/diff.json \
+            /specs/swagger_main.$EXT /specs/swagger_head.$EXT
+          
+          # 3. Verify it worked
+          if [ -f "diff.json" ]; then
+            echo "✅ Diff generated successfully."
+          else
+            echo "❌ Failed to generate diff.json"
+            exit 1
+          fi
 
       # ---------------------------------------------------------
       # 7. Run Logic (Python)
