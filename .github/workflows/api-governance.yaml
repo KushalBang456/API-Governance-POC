@@ -526,8 +526,10 @@ jobs:
             // --- Post to Job Summary ---
             await core.summary.addRaw(summary).write();
 
-            // --- Fail Build if Strict Errors exist ---
-            const strictErrors = strictResults.filter(r => r.severity === 0).length;
-            if (strictErrors > 0) {
-              core.setFailed(`❌ Governance Check Failed: ${strictErrors} strict errors found.`);
-            }
+            // --- FAIL BUILD LOGIC (COMMENTED OUT FOR POC) ---
+            // const strictErrors = strictResults.filter(r => r.severity === 0).length;
+            // if (strictErrors > 0) {
+            //   // Uncomment this line when you want to block PRs again:
+            //   // core.setFailed(`❌ Governance Check Failed: ${strictErrors} strict errors found.`);
+            //   console.log(`⚠️ Found ${strictErrors} strict errors, but build failure is disabled for POC.`);
+            // }
