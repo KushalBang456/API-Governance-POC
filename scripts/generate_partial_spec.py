@@ -19,37 +19,29 @@ def _is_int_str(s: str) -> bool:
     return re.fullmatch(r'\d+', (s or '')) is not None
 
 def load_spec_file(path: str):
-    """
-    Smart loader: Loads JSON or YAML based on file extension.
-    Requires PyYAML for .yaml/.yml files.
-    """
+    """Smart loader: Loads JSON or YAML based on file extension."""
     path_obj = Path(path)
     if not path_obj.exists():
         print(f"Error: File not found at {path}", file=sys.stderr)
         return None
 
     try:
-        # 1. Check extension for YAML
         if path_obj.suffix.lower() in ['.yaml', '.yml']:
             if yaml is None:
-                print(f"Error: Cannot load {path}. PyYAML is not installed. Run 'pip install PyYAML'.", file=sys.stderr)
+                print(f"Error: Cannot load {path}. PyYAML missing.", file=sys.stderr)
                 sys.exit(1)
             with open(path, 'r', encoding='utf-8') as f:
                 print(f"📂 Loading YAML file: {path}")
                 return yaml.safe_load(f)
-        
-        # 2. Default to JSON for .json or others
         else:
             with open(path, 'r', encoding='utf-8-sig') as f:
                 print(f"📂 Loading JSON file: {path}")
                 return json.load(f)
-
     except Exception as e:
         print(f"Error: Could not parse file {path}. Reason: {e}", file=sys.stderr)
         return None
 
 def save_yaml(obj, path: str):
-    """Saves an object to a YAML file, or falls back to JSON."""
     if yaml:
         with open(path, 'w', encoding='utf-8') as f:
             yaml.safe_dump(obj, f, sort_keys=False, allow_unicode=True)
@@ -57,131 +49,23 @@ def save_yaml(obj, path: str):
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(obj, f, indent=2, ensure_ascii=False)
 
-def loc_to_tokens(loc: str):
-    if loc is None:
-        return []
-    return loc.split('.')
-
-def set_by_tokens(doc, tokens, value):
-    if not tokens:
-        raise ValueError('Empty token list')
-    cur = doc
-    for i, tok in enumerate(tokens):
-        last = (i == len(tokens) - 1)
-        if isinstance(cur, list) and _is_int_str(tok):
-            idx = int(tok)
-            if last:
-                if idx < len(cur):
-                    cur[idx] = value
-                else:
-                    while len(cur) < idx:
-                        cur.append(None)
-                    cur.append(value)
-                return
-            if idx < len(cur):
-                if cur[idx] is None:
-                    next_tok = tokens[i+1] if i+1 < len(tokens) else None
-                    cur[idx] = [] if _is_int_str(next_tok) else {}
-                cur = cur[idx]
-            else:
-                while len(cur) <= idx:
-                    cur.append({})
-                cur = cur[idx]
-            continue
-        if not isinstance(cur, dict):
-            cur = {}
-        if last:
-            cur[tok] = value
-            return
-        next_tok = tokens[i+1] if i+1 < len(tokens) else None
-        if tok not in cur or cur[tok] is None:
-            cur[tok] = [] if _is_int_str(next_tok) else {}
-        cur = cur[tok]
-
-def remove_by_tokens(doc, tokens):
-    if not tokens:
-        raise ValueError('Refusing to remove whole document')
-    cur = doc
-    for tok in tokens[:-1]:
-        if isinstance(cur, dict):
-            cur = cur.get(tok)
-        elif isinstance(cur, list) and _is_int_str(tok):
-            idx = int(tok)
-            if 0 <= idx < len(cur):
-                cur = cur[idx]
-            else:
-                return
-        else:
-            return
-        if cur is None:
-            return
-    last = tokens[-1]
-    if isinstance(cur, dict):
-        cur.pop(last, None)
-    elif isinstance(cur, list) and _is_int_str(last):
-        idx = int(last)
-        if 0 <= idx < len(cur):
-            cur.pop(idx)
-
-def mark_removed_by_tokens(doc, tokens):
-    set_by_tokens(doc, tokens, {"x-removed": True})
-
-def apply_diff_item_robust(new_spec: dict, item: dict, remove_actually: bool = False):
-    action = item.get('action')
-    def _get_loc(det):
-        return (det or {}).get('location') or (det or {}).get('pointer')
-    if action in ('add', 'change'):
-        for det in item.get('destinationSpecEntityDetails', []) or []:
-            loc = _get_loc(det)
-            val = det.get('value')
-            if not loc or val is None:
-                continue
-            tokens = loc_to_tokens(loc)
-            set_by_tokens(new_spec, tokens, val)
-    elif action == 'remove':
-        for det in item.get('sourceSpecEntityDetails', []) or []:
-            loc = _get_loc(det)
-            if not loc:
-                continue
-            tokens = loc_to_tokens(loc)
-            if remove_actually:
-                remove_by_tokens(new_spec, tokens)
-            else:
-                mark_removed_by_tokens(new_spec, tokens)
-    else:
-        for det in item.get('destinationSpecEntityDetails', []) or []:
-            loc = _get_loc(det)
-            val = det.get('value')
-            if loc and val is not None:
-                set_by_tokens(new_spec, loc_to_tokens(loc), val)
-
 # --- Core Logic Functions ---
 
 def load_baseline_operations(baseline_path: Path) -> set:
-    """
-    Loads the baseline spec and returns a set of all defined API operations
-    in the format 'METHOD@/path/string'.
-    """
     print(f"Loading legacy baseline from: {baseline_path}")
-    
-    # CHANGED: Use the universal loader instead of load_json
     baseline_spec = load_spec_file(str(baseline_path))
     legacy_ops = set()
     
     if baseline_spec and "paths" in baseline_spec:
         for path_string, path_item in baseline_spec["paths"].items():
-            if not isinstance(path_item, dict):
-                continue
+            if not isinstance(path_item, dict): continue
             for method in path_item.keys():
                 if method.lower() in {"get", "put", "post", "delete", "patch", "options", "head", "trace"}:
                     op_key = f"{method.upper()}@{path_string}"
                     legacy_ops.add(op_key)
-        
-        print(f"Loaded {len(legacy_ops)} legacy operations from baseline.")
-        return legacy_ops
     
-    print("Warning: No baseline spec found or baseline has no paths.")
-    return set()
+    print(f"Loaded {len(legacy_ops)} legacy operations from baseline.")
+    return legacy_ops
 
 def get_key_from_loc(loc_str: str) -> str:
     if loc_str and loc_str.startswith("paths."):
@@ -195,282 +79,204 @@ def get_key_from_loc(loc_str: str) -> str:
             return f"PATH_ONLY@{path_string}"
     return None
 
-def build_new_spec(diff: Any, legacy_ops: set, remove_actually: bool = False):
+def copy_operation_from_dest(new_spec: dict, dest_spec: dict, op_key: str):
+    """Copies full operation from Head spec to Partial spec."""
+    if not op_key or '@' not in op_key: return
+    method, path = op_key.split('@', 1)
+    method = method.lower()
+
+    if "paths" not in new_spec: new_spec["paths"] = {}
+    if path not in new_spec["paths"]: new_spec["paths"][path] = {}
+
+    dest_paths = dest_spec.get("paths", {})
+    if path in dest_paths and method in dest_paths[path]:
+        new_spec["paths"][path][method] = copy.deepcopy(dest_paths[path][method])
+        print(f"   -> Copied full operation {method.upper()} {path}")
+
+def build_new_spec(diff: Any, legacy_ops: set, dest_spec: dict):
     new_spec = {
         "openapi": "3.0.0",
         "info": {"title": "Changed-Only API Spec", "version": "1.0.0"},
         "paths": {}
     }
+    
     items = []
     if isinstance(diff, dict):
         for b in ('breakingDifferences', 'nonBreakingDifferences', 'unclassifiedDifferences'):
             arr = diff.get(b)
-            if isinstance(arr, list):
-                items.extend(arr)
-        if not items and 'differences' in diff and isinstance(diff.get('differences'), list):
-            items = diff['differences']
-    elif isinstance(diff, list):
-        items = diff
+            if isinstance(arr, list): items.extend(arr)
+        if not items and 'differences' in diff: items = diff['differences']
+    elif isinstance(diff, list): items = diff
     
-    for it in items:
-        action = it.get('action')
-        loc_str = None
-        key_to_check = None
-        
-        if action in ('add', 'change'):
-            if "destinationSpecEntityDetails" in it and it["destinationSpecEntityDetails"]:
-                loc_str = (it["destinationSpecEntityDetails"][0] or {}).get('location')
-        elif action == 'remove':
-            if "sourceSpecEntityDetails" in it and it["sourceSpecEntityDetails"]:
-                loc_str = (it["sourceSpecEntityDetails"][0] or {}).get('location')
-        
-        if not loc_str:
-            continue
-        
-        key_to_check = get_key_from_loc(loc_str)
-        
-        if not key_to_check:
-            continue
+    affected_ops = set()
 
-        if key_to_check in legacy_ops:
-            print(f"Ignoring change in legacy operation: {key_to_check}")
-            continue
-        elif key_to_check.startswith("PATH_ONLY@"):
-            path_only = key_to_check.split('@')[1]
+    for it in items:
+        # Check destination first, then source
+        loc_str = None
+        if "destinationSpecEntityDetails" in it and it["destinationSpecEntityDetails"]:
+            loc_str = (it["destinationSpecEntityDetails"][0] or {}).get('location')
+        if not loc_str and "sourceSpecEntityDetails" in it and it["sourceSpecEntityDetails"]:
+            loc_str = (it["sourceSpecEntityDetails"][0] or {}).get('location')
+
+        if not loc_str: continue
+        key = get_key_from_loc(loc_str)
+        if key: affected_ops.add(key)
+
+    print(f"Found {len(affected_ops)} affected operations in diff.")
+    
+    for key in affected_ops:
+        if key.startswith("PATH_ONLY@"):
+            path_only = key.split('@')[1]
             is_legacy = any(op.endswith(f"@{path_only}") for op in legacy_ops)
             if is_legacy:
-                print(f"Ignoring change in legacy path-level item: {path_only}")
-                continue
+                print(f"Ignoring change in legacy path: {path_only}")
             else:
-                print(f"Including change in new path-level item: {path_only}")
+                print(f"Including new path: {path_only}")
+                if path_only in dest_spec.get("paths", {}):
+                    new_spec["paths"][path_only] = copy.deepcopy(dest_spec["paths"][path_only])
         else:
-             print(f"Including change in new operation: {key_to_check}")
-        
-        apply_diff_item_robust(new_spec, it, remove_actually=remove_actually)
+            if key in legacy_ops:
+                print(f"Ignoring change in legacy operation: {key}")
+            else:
+                print(f"Including changed operation: {key}")
+                copy_operation_from_dest(new_spec, dest_spec, key)
+
     return new_spec
-
-def sync_responses_from_base(new_spec: dict, source_spec: dict = None, dest_spec: dict = None):
-    base_spec = dest_spec or source_spec
-    if not isinstance(base_spec, dict):
-        print("No base spec available for syncing responses.")
-        return
-
-    base_paths = base_spec.get("paths") or {}
-    op_methods = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
-
-    for path, path_item in (new_spec.get("paths") or {}).items():
-        if not isinstance(path_item, dict):
-            continue
-        base_path_item = base_paths.get(path)
-        if not isinstance(base_path_item, dict):
-            continue
-
-        for method, op in path_item.items():
-            if not isinstance(op, dict) or method.lower() not in op_methods:
-                continue
-
-            base_op = base_path_item.get(method)
-            if isinstance(base_op, dict):
-                base_responses = base_op.get("responses")
-                if isinstance(base_responses, dict) and base_responses:
-                    op["responses"] = copy.deepcopy(base_responses)
-                    print(f"Synced responses for {method.upper()} {path} from base spec.")
-                
-                base_request_body = base_op.get("requestBody")
-                if isinstance(base_request_body, dict) and base_request_body:
-                    op["requestBody"] = copy.deepcopy(base_request_body)
-                    print(f"Synced requestBody for {method.upper()} {path} from base spec.")
-
-def ensure_operations_have_responses(spec: dict, dest_spec: dict = None, source_spec: dict = None):
-    op_methods = {"get","put","post","delete","options","head","patch","trace"}
-    for path, path_item in (spec.get('paths') or {}).items():
-        if not isinstance(path_item, dict):
-            continue
-        for method, op in list(path_item.items()):
-            if not isinstance(method, str):
-                continue
-            if method.lower() not in op_methods:
-                continue
-            if not isinstance(op, dict):
-                continue
-            responses = op.get('responses')
-            if isinstance(responses, dict) and len(responses) > 0:
-                continue
-            
-            copied = False
-            for candidate in (dest_spec, source_spec):
-                if not isinstance(candidate, dict):
-                    continue
-                cand_paths = candidate.get('paths') or {}
-                if path in cand_paths and isinstance(cand_paths[path], dict):
-                    cand_op = cand_paths[path].get(method)
-                    if isinstance(cand_op, dict):
-                        cand_responses = cand_op.get('responses')
-                        if isinstance(cand_responses, dict) and len(cand_responses) > 0:
-                            op['responses'] = copy.deepcopy(cand_responses)
-                            copied = True
-                            break
-            if copied:
-                continue
-            
-            op['responses'] = {
-                "default": {
-                    "description": "Default response"
-                }
-            }
 
 def find_all_refs(obj: Any, found_refs_set: set):
     if isinstance(obj, dict):
-        if "$ref" in obj and isinstance(obj["$ref"], str):
-            found_refs_set.add(obj["$ref"])
-        for value in obj.values():
-            find_all_refs(value, found_refs_set)
+        if "$ref" in obj and isinstance(obj["$ref"], str): found_refs_set.add(obj["$ref"])
+        for value in obj.values(): find_all_refs(value, found_refs_set)
     elif isinstance(obj, list):
-        for item in obj:
-            find_all_refs(item, found_refs_set)
+        for item in obj: find_all_refs(item, found_refs_set)
 
 def build_required_components(new_spec: dict, base_spec: dict):
-    try:
-        base_schemas = base_spec["components"]["schemas"]
-    except (KeyError, TypeError, AttributeError):
-        print("Warning: Base spec has no components/schemas to reference.")
-        new_spec["components"] = {"schemas": {}}
+    """
+    Universally copies ANY referenced component (schemas, responses, parameters, etc.)
+    from the base spec to the new spec to ensure validity.
+    """
+    if "components" not in base_spec:
+        new_spec["components"] = {}
         return
 
-    refs_to_scan_queue = set()
-    find_all_refs(new_spec.get("paths", {}), refs_to_scan_queue)
+    # Ensure target components dict exists
+    if "components" not in new_spec:
+        new_spec["components"] = {}
 
-    final_schemas = {}
+    # Queue of refs to resolve
+    refs_to_scan_queue = set()
+    
+    # Initial scan: find refs in the paths we just copied
+    find_all_refs(new_spec.get("paths", {}), refs_to_scan_queue)
+    
     scanned_refs = set()
 
     while refs_to_scan_queue:
         ref_str = refs_to_scan_queue.pop()
         
-        if ref_str in scanned_refs:
-            continue
+        if ref_str in scanned_refs: continue
         scanned_refs.add(ref_str)
 
-        try:
-            if not ref_str.startswith("#/components/schemas/"):
-                continue
-            comp_name = ref_str.split('/')[-1]
-        except Exception:
+        # Parse ref string: #/components/{type}/{name}
+        if not ref_str.startswith("#/components/"): continue
+        
+        parts = ref_str.split('/')
+        if len(parts) < 4: continue # Must have at least #, components, type, name
+        
+        comp_type = parts[2] # e.g., schemas, responses, parameters
+        comp_name = parts[3] # e.g., User, NotFound, PageLimit
+        
+        # 1. Check if type exists in base spec
+        base_comps = base_spec.get("components", {})
+        if comp_type not in base_comps: continue
+        
+        # 2. Check if name exists in that type category
+        if comp_name not in base_comps[comp_type]:
+            print(f"Warning: Reference {ref_str} not found in base spec.")
             continue
 
-        if comp_name not in final_schemas:
-            if comp_name in base_schemas:
-                schema_def = base_schemas[comp_name]
-                final_schemas[comp_name] = schema_def
-                find_all_refs(schema_def, refs_to_scan_queue)
-            else:
-                print(f"Warning: Could not find schema definition for {comp_name}")
+        # 3. Initialize type dict in new_spec if missing
+        if comp_type not in new_spec["components"]:
+            new_spec["components"][comp_type] = {}
 
-    print(f"Pruned components. Kept {len(final_schemas)} referenced schemas.")
-    new_spec["components"] = {"schemas": final_schemas}
+        # 4. Copy if not already present
+        if comp_name not in new_spec["components"][comp_type]:
+            comp_def = base_comps[comp_type][comp_name]
+            new_spec["components"][comp_type][comp_name] = copy.deepcopy(comp_def)
+            # print(f"   -> Copied component: {comp_type}/{comp_name}")
+            
+            # 5. Recursively scan this new component for more refs
+            # (e.g. A Response might ref a Schema)
+            find_all_refs(comp_def, refs_to_scan_queue)
 
+    # Print summary
+    count = 0
+    for key, val in new_spec.get("components", {}).items():
+        count += len(val)
+    print(f"Pruned components. Kept {count} total referenced components across all types.")
 
 # --- Main Execution Block ---
 
 def main():
-    # 1. Determine Paths
-    # artifact_dir_str = os.environ.get('BUILD_ARTIFACTSTAGINGDIRECTORY') or os.environ.get('BUILD_ARTIFACTSTAGINGDIRECTORY'.upper()) or r"."
-    # pipeline_workspace_str = os.environ.get('PIPELINE_WORKSPACE') or os.environ.get('PIPELINE_WORKSPACE'.upper()) or r"."
-
-    # artifact_dir = Path(artifact_dir_str)
-    # pipeline_workspace = Path(pipeline_workspace_str)
-
-    # 1. Determine Paths
-    # In GitHub Actions, we work in the current directory (".")
-    # If we ever need to support ADO again, we can add those checks back.
     current_dir = Path(".")
-    
     artifact_dir = current_dir
     pipeline_workspace = current_dir
 
-    # CHANGED: Handle dynamic baseline filename from command line arguments
-    # Usage: python script.py [baseline_filename]
-    baseline_filename = "swagger_baseline.json" # Default
+    baseline_filename = "swagger_baseline.json"
     if len(sys.argv) > 1:
         baseline_filename = sys.argv[1]
     
-    # We look for the baseline in the pipeline workspace (where the workflow downloaded it)
     baseline_path = pipeline_workspace / baseline_filename
-
     diff_path = artifact_dir / "diff.json"
     out_json = artifact_dir / "partial_spec.json"
     out_yaml = artifact_dir / "partial_spec.yaml"
     
-    # CHANGED: Fallback logic for Main/Head specs.
-    # The workflow might have saved them as .yaml OR .json. We check both.
     def get_existing_path(base_name_no_ext):
         p_yaml = artifact_dir / f"{base_name_no_ext}.yaml"
         p_json = artifact_dir / f"{base_name_no_ext}.json"
         if p_yaml.exists(): return p_yaml
         if p_json.exists(): return p_json
-        return p_json # Default return (might not exist)
+        return p_json
 
     main_spec_path = get_existing_path("swagger_main")
     head_spec_path = get_existing_path("swagger_head")
 
-    print(f"Baseline spec will be loaded from: {baseline_path}")
-    print(f"Main spec path: {main_spec_path}")
-    print(f"Head spec path: {head_spec_path}")
+    print(f"Baseline: {baseline_path}")
+    print(f"Head Spec: {head_spec_path}")
 
-    # 2. Load Diff File (Always JSON)
+    # 2. Load Diff
     if not diff_path.exists() or diff_path.stat().st_size == 0:
-        print("No diff.json found or file is empty. Skipping partial spec generation.")
+        print("No diff.json found. Exiting.")
         sys.exit(0)
 
     txt = diff_path.read_text(encoding='utf-8-sig').strip()
-    if not txt:
-        sys.exit(0)
+    if not txt: sys.exit(0)
 
-    if txt.startswith("No changes found between the two specifications"):
-        print("No API changes found — writing empty partial spec.")
-        empty_spec = {
-            "openapi": "3.0.0",
-            "info": {"title": "Changed-Only API Spec", "version": "1.0.0"},
-            "paths": {},
-            "components": {"schemas": {}}
-        }
-        out_json.write_text(json.dumps(empty_spec, indent=2, ensure_ascii=False), encoding='utf-8')
-        save_yaml(empty_spec, str(out_yaml))
-        sys.exit(0)
-        
     try:
         diff_data = json.loads(txt[txt.find('{'):]) if '{' in txt else {}
     except Exception as e:
         print("Failed to parse diff.json:", e, file=sys.stderr)
         sys.exit(1)
 
-    # 3. Load all specs using the new Universal Loader
-    # This works for both JSON and YAML now.
+    # 3. Load Specs
     legacy_ops = load_baseline_operations(baseline_path)
-    source_spec = load_spec_file(str(main_spec_path))
     dest_spec = load_spec_file(str(head_spec_path))
 
     if not dest_spec:
-        print(f"Error: Could not load head spec from {head_spec_path}", file=sys.stderr)
+        print(f"Error: Could not load head spec.", file=sys.stderr)
         sys.exit(1)
 
     # 4. Run Logic
-    print("Step 1: Building spec from diff and filtering legacy ops...")
-    new_spec = build_new_spec(diff_data, legacy_ops=legacy_ops, remove_actually=False)
+    print("Step 1: identifying changed ops and copying from Head spec...")
+    new_spec = build_new_spec(diff_data, legacy_ops, dest_spec)
 
-    print("Step 2: Syncing responses and requestBodies...")
-    sync_responses_from_base(new_spec, source_spec=source_spec, dest_spec=dest_spec)
-
-    print("Step 3: Ensuring operations have responses...")
-    ensure_operations_have_responses(new_spec, dest_spec=dest_spec, source_spec=source_spec)
-
-    print("Step 4: Building minimal components...")
+    print("Step 2: Building minimal components (Universal)...")
     build_required_components(new_spec, base_spec=dest_spec)
 
     # 5. Save
-    print("Step 5: Saving final partial spec...")
+    print("Step 3: Saving final partial spec...")
     out_json.write_text(json.dumps(new_spec, indent=2, ensure_ascii=False), encoding='utf-8')
     save_yaml(new_spec, str(out_yaml))
-
     sys.exit(0)
 
 if __name__ == "__main__":
