@@ -437,23 +437,97 @@ jobs:
           echo "===================================="
       
       # ---------------------------------------------------------
-      # 8. Linting (Strict)
+      # 8. Linting (Strict) - Save to JSON
       # ---------------------------------------------------------
-      - name: 🛑 Strict Lint (Blocks PR)
+      - name: 🛑 Strict Lint (Generate JSON)
         run: |
+          # Run spectral and save output to strict.json
+          # We use '|| true' because we don't want to crash the build yet.
+          # We will handle the failure in the Report step.
           npx spectral lint partial_spec.json \
             --ruleset governance-hub/.spectral.yaml \
-            --format stylish || exit 0
+            --format json \
+            --output strict.json || true
 
       # ---------------------------------------------------------
-      # 9. Linting (Advisory)
+      # 9. Linting (Advisory) - Save to JSON
       # ---------------------------------------------------------
-      - name: ⚠️ Advisory Lint (Tech Debt)
-        continue-on-error: true
+      - name: ⚠️ Advisory Lint (Generate JSON)
         run: |
           INPUT="${{ inputs.swagger_path }}"
           EXT="${INPUT##*.}"
           
+          # Run spectral and save output to advisory.json
           npx spectral lint "swagger_head.$EXT" \
             --ruleset governance-hub/.spectral-warn.yaml \
-            --format stylish
+            --format json \
+            --output advisory.json || true
+
+      # ---------------------------------------------------------
+      # 10. Generate Beautiful Report & Annotations
+      # ---------------------------------------------------------
+      - name: 📊 Generate Governance Report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            function loadResults(filename) {
+              if (fs.existsSync(filename)) {
+                try { return JSON.parse(fs.readFileSync(filename, 'utf8')); } 
+                catch (e) { return []; }
+              }
+              return [];
+            }
+
+            const strictResults = loadResults('strict.json');
+            const advisoryResults = loadResults('advisory.json');
+            
+            // --- Function to Process Results ---
+            function processResults(results, title, icon) {
+              if (results.length === 0) return `\n### ${icon} ${title}\n\n✅ **No issues found!**\n`;
+              
+              let md = `\n### ${icon} ${title} (${results.length} issues)\n\n`;
+              md += `| Severity | Code | Line | Message |\n`;
+              md += `| :---: | :--- | :---: | :--- |\n`;
+              
+              results.forEach(r => {
+                const isError = r.severity === 0;
+                const sevIcon = isError ? '🛑' : '⚠️';
+                const line = r.range ? r.range.start.line + 1 : 1;
+                const msg = r.message.replace(/\|/g, '&#124;'); 
+                const path = r.source || 'unknown';
+                
+                // 1. Build Markdown Table Row
+                md += `| ${sevIcon} | **${r.code}** | ${line} | ${msg} <br> *(${path})* |\n`;
+
+                // 2. CREATE GITHUB ANNOTATION (Restores the UI Error/Warning)
+                const annotationProps = { 
+                  title: `${r.code} (${title})`,
+                  file: path, 
+                  startLine: line 
+                };
+                
+                if (isError) {
+                  core.error(r.message, annotationProps);
+                } else {
+                  core.warning(r.message, annotationProps);
+                }
+              });
+              return md;
+            }
+
+            // --- Generate Content ---
+            let summary = "# API Governance Report 🛡️\n";
+            summary += processResults(strictResults, "Strict Checks (New Code)", "🛑");
+            summary += "\n---\n";
+            summary += processResults(advisoryResults, "Advisory Checks (Tech Debt)", "⚠️");
+
+            // --- Post to Job Summary ---
+            await core.summary.addRaw(summary).write();
+
+            // --- Fail Build if Strict Errors exist ---
+            const strictErrors = strictResults.filter(r => r.severity === 0).length;
+            if (strictErrors > 0) {
+              core.setFailed(`❌ Governance Check Failed: ${strictErrors} strict errors found.`);
+            }
