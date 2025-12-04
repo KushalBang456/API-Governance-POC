@@ -483,53 +483,66 @@ jobs:
             const strictResults = loadResults('strict.json');
             const advisoryResults = loadResults('advisory.json');
             
+            // --- Helper: Clean up the JSON path for display ---
+            // Converts ["paths", "/admin/health", "get"] -> "paths > /admin/health > get"
+            function formatPath(pathArray) {
+              if (!pathArray || pathArray.length === 0) return "root";
+              return pathArray.join(" > ");
+            }
+
             // --- Function to Process Results ---
-            function processResults(results, title, icon) {
+            function processResults(results, title, icon, isStrict) {
               if (results.length === 0) return `\n### ${icon} ${title}\n\n✅ **No issues found!**\n`;
               
               let md = `\n### ${icon} ${title} (${results.length} issues)\n\n`;
-              md += `| Severity | Code | Line | Message |\n`;
-              md += `| :---: | :--- | :---: | :--- |\n`;
+              
+              // Table Header
+              md += `| Severity | Rule | Location | Message |\n`;
+              md += `| :---: | :--- | :--- | :--- |\n`;
               
               results.forEach(r => {
                 const isError = r.severity === 0;
                 const sevIcon = isError ? '🛑' : '⚠️';
-                const line = r.range ? r.range.start.line + 1 : 1;
-                const msg = r.message.replace(/\|/g, '&#124;'); 
-                const path = r.source || 'unknown';
                 
-                // 1. Build Markdown Table Row
-                md += `| ${sevIcon} | **${r.code}** | ${line} | ${msg} <br> *(${path})* |\n`;
+                // For Strict (Partial Spec), line numbers are fake/temp, so we hide them.
+                // For Advisory (Full Spec), line numbers are real, so we keep them.
+                const lineInfo = isStrict ? "" : `(Line ${r.range.start.line + 1})`;
+                
+                const msg = r.message.replace(/\|/g, '&#124;'); 
+                const logicalPath = formatPath(r.path);
+                
+                // Build Row: Severity | Rule Code | Location (Clean) | Message + Line Info
+                md += `| ${sevIcon} | **${r.code}** | \`${logicalPath}\` | ${msg} ${lineInfo} |\n`;
 
-                // 2. CREATE GITHUB ANNOTATION (Restores the UI Error/Warning)
+                // --- ANNOTATIONS ---
+                // We still post annotations so they show up in "Files Changed"
                 const annotationProps = { 
-                  title: `${r.code} (${title})`,
-                  file: path, 
-                  startLine: line 
+                  title: `${r.code}`,
+                  file: r.source || 'swagger.yaml', 
+                  startLine: r.range.start.line + 1 
                 };
                 
-                if (isError) {
-                  core.error(r.message, annotationProps);
-                } else {
-                  core.warning(r.message, annotationProps);
-                }
+                if (isError) core.error(r.message, annotationProps);
+                else core.warning(r.message, annotationProps);
               });
               return md;
             }
 
             // --- Generate Content ---
             let summary = "# API Governance Report 🛡️\n";
-            summary += processResults(strictResults, "Strict Checks (New Code)", "🛑");
+            summary += "> **Strict Checks:** Run on new/modified code only. (Blocks PR)\n";
+            summary += "> **Advisory Checks:** Run on the full file. (Tech Debt)\n";
+            
+            // Pass 'true' for strict to hide line numbers, 'false' for advisory to show them
+            summary += processResults(strictResults, "Strict Checks (New Code)", "🛑", true);
             summary += "\n---\n";
-            summary += processResults(advisoryResults, "Advisory Checks (Tech Debt)", "⚠️");
+            summary += processResults(advisoryResults, "Advisory Checks (Tech Debt)", "⚠️", false);
 
             // --- Post to Job Summary ---
             await core.summary.addRaw(summary).write();
 
-            // --- FAIL BUILD LOGIC (COMMENTED OUT FOR POC) ---
+            // --- Fail Build Logic (Commented out for POC) ---
             // const strictErrors = strictResults.filter(r => r.severity === 0).length;
             // if (strictErrors > 0) {
-            //   // Uncomment this line when you want to block PRs again:
-            //   // core.setFailed(`❌ Governance Check Failed: ${strictErrors} strict errors found.`);
-            //   console.log(`⚠️ Found ${strictErrors} strict errors, but build failure is disabled for POC.`);
+            //   core.setFailed(`❌ Governance Check Failed: ${strictErrors} strict errors found.`);
             // }
