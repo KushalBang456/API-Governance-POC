@@ -3,7 +3,6 @@ info:
   title: Main Branch Spec
   version: 1.1.0
 paths:
-  # 1. Legacy (Inherited)
   /legacy/users:
     get:
       summary: Ancient User Endpoint
@@ -11,16 +10,10 @@ paths:
         '200':
           description: OK
   
-  # 2. Modern (Currently Valid)
   /modern/orders:
     get:
       summary: Recent Orders
-      parameters:
-        - name: orderId
-          in: query
-          description: The ID of the order
-          schema:
-            type: integer # <--- NOTE: It is an Integer here
+      description: Returns recent orders.
       responses:
         '200':
           description: OK

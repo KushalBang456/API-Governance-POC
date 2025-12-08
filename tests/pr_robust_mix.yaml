@@ -3,52 +3,51 @@ info:
   title: Robust Mix Test
   version: 1.2.0
 paths:
-  # 1. LEGACY (Modified - Non-Breaking)
-  # Change: Added 'legacy_filter'
-  # Violation: No Description.
-  # Expected: IGNORE (Legacy).
+  # 1. LEGACY (Modified)
+  # Change: Added a POST method (Guaranteed Diff)
+  # Violation: No description.
+  # Expected: Python should IGNORE this (It's in Baseline).
   /legacy/users:
     get:
       summary: Ancient User Endpoint
-      parameters:
-        - name: legacy_filter
-          in: query
-          schema:
-            type: string
-          # Violation: Missing description
+      responses:
+        '200':
+          description: OK
+    post: # <--- NEW METHOD ADDED
+      summary: Legacy Update
+      # No description
       responses:
         '200':
           description: OK
 
-  # 2. MODERN (Modified - BREAKING CHANGE)
-  # Change: Changed 'orderId' from Integer to String (Breaking!)
-  # Violation: Removed Description.
-  # Expected: INCLUDE (Modern) -> FAIL Lint.
+  # 2. MODERN (Modified)
+  # Change: Added a POST method (Guaranteed Diff)
+  # Violation: No description.
+  # Expected: Python should INCLUDE this. Strict Lint should FAIL.
   /modern/orders:
     get:
       summary: Recent Orders
-      parameters:
-        - name: orderId
-          in: query
-          # Violation: Description removed!
-          schema:
-            type: string # <--- BREAKING CHANGE (was integer)
+      description: Returns recent orders.
+      responses:
+        '200':
+          description: OK
+    post: # <--- NEW METHOD ADDED
+      summary: Create Order
+      # No description! (Violation)
       responses:
         '200':
           description: OK
 
-  # 3. NEW BROKEN (New Endpoint)
-  # Expected: INCLUDE -> FAIL Lint.
+  # 3. NEW BROKEN (Added)
   /new/broken:
     post:
       summary: I am new and broken
-      # Violation: No description
+      # No description
       responses:
         '200':
           description: OK
 
-  # 4. NEW VALID (New Endpoint + Schema)
-  # Expected: INCLUDE -> COPY Schemas.
+  # 4. NEW VALID (Added & Complex)
   /new/deep-ref:
     post:
       summary: Deep Ref Test
