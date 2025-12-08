@@ -3,34 +3,52 @@ info:
   title: Robust Mix Test
   version: 1.2.0
 paths:
-  # 1. LEGACY (Modified & Broken) -> Should be IGNORED
+  # 1. LEGACY (Modified & Broken)
+  # Change: Added a new query param 'legacy_filter' (Functional Change -> In Diff)
+  # Violation: Param has NO DESCRIPTION.
+  # Expected: Python should IGNORE this (It's in Baseline).
   /legacy/users:
     get:
       summary: Ancient User Endpoint
-      # description: Still missing
+      parameters:
+        - name: legacy_filter
+          in: query
+          schema:
+            type: string
+          # No description! (Violation)
       responses:
         '200':
           description: OK
 
-  # 2. MODERN (Modified & Broken) -> Should be CAUGHT
+  # 2. MODERN (Modified & Broken)
+  # Change: Added a new query param 'modern_filter' (Functional Change -> In Diff)
+  # Violation: Param has NO DESCRIPTION.
+  # Expected: Python should INCLUDE this. Strict Lint should FAIL.
   /modern/orders:
     get:
       summary: Recent Orders
-      # description: REMOVED (Violation!)
+      parameters:
+        - name: modern_filter
+          in: query
+          schema:
+            type: string
+          # No description! (Violation)
       responses:
         '200':
           description: OK
 
-  # 3. NEW BROKEN (Added & Broken) -> Should be CAUGHT
+  # 3. NEW BROKEN (Added & Broken)
+  # Expected: Python should INCLUDE this. Lint should FAIL.
   /new/broken:
     post:
       summary: I am new and broken
-      # No description (Violation!)
+      # No description (Violation)
       responses:
         '200':
           description: OK
 
-  # 4. NEW VALID (Added & Complex) -> Should be COPIED with Schemas
+  # 4. NEW VALID (Added & Complex)
+  # Expected: Python should INCLUDE this and COPY Schemas.
   /new/deep-ref:
     post:
       summary: Deep Ref Test
@@ -39,7 +57,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Root' # <--- Needs Root
+              $ref: '#/components/schemas/Root'
       responses:
         '200':
           description: OK
@@ -50,6 +68,6 @@ components:
       type: object
       properties:
         child:
-          $ref: '#/components/schemas/Leaf' # <--- Needs Leaf
+          $ref: '#/components/schemas/Leaf'
     Leaf:
       type: string
