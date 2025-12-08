@@ -3,10 +3,10 @@ info:
   title: Robust Mix Test
   version: 1.2.0
 paths:
-  # 1. LEGACY (Modified & Broken)
-  # Change: Added a new query param 'legacy_filter' (Functional Change -> In Diff)
-  # Violation: Param has NO DESCRIPTION.
-  # Expected: Python should IGNORE this (It's in Baseline).
+  # 1. LEGACY (Modified - Non-Breaking)
+  # Change: Added 'legacy_filter'
+  # Violation: No Description.
+  # Expected: IGNORE (Legacy).
   /legacy/users:
     get:
       summary: Ancient User Endpoint
@@ -15,40 +15,40 @@ paths:
           in: query
           schema:
             type: string
-          # No description! (Violation)
+          # Violation: Missing description
       responses:
         '200':
           description: OK
 
-  # 2. MODERN (Modified & Broken)
-  # Change: Added a new query param 'modern_filter' (Functional Change -> In Diff)
-  # Violation: Param has NO DESCRIPTION.
-  # Expected: Python should INCLUDE this. Strict Lint should FAIL.
+  # 2. MODERN (Modified - BREAKING CHANGE)
+  # Change: Changed 'orderId' from Integer to String (Breaking!)
+  # Violation: Removed Description.
+  # Expected: INCLUDE (Modern) -> FAIL Lint.
   /modern/orders:
     get:
       summary: Recent Orders
       parameters:
-        - name: modern_filter
+        - name: orderId
           in: query
+          # Violation: Description removed!
           schema:
-            type: string
-          # No description! (Violation)
+            type: string # <--- BREAKING CHANGE (was integer)
       responses:
         '200':
           description: OK
 
-  # 3. NEW BROKEN (Added & Broken)
-  # Expected: Python should INCLUDE this. Lint should FAIL.
+  # 3. NEW BROKEN (New Endpoint)
+  # Expected: INCLUDE -> FAIL Lint.
   /new/broken:
     post:
       summary: I am new and broken
-      # No description (Violation)
+      # Violation: No description
       responses:
         '200':
           description: OK
 
-  # 4. NEW VALID (Added & Complex)
-  # Expected: Python should INCLUDE this and COPY Schemas.
+  # 4. NEW VALID (New Endpoint + Schema)
+  # Expected: INCLUDE -> COPY Schemas.
   /new/deep-ref:
     post:
       summary: Deep Ref Test
