@@ -1,0 +1,101 @@
+name: 🛡️ Meta-Test Governance Logic
+
+on:
+  # Trigger on every push to any branch
+  push:
+
+  # Trigger on every PR to any branch
+  pull_request:
+
+  # Optional: Keep manual trigger for easy testing
+  workflow_dispatch:
+
+jobs:
+  test-governance-logic:
+    runs-on: ubuntu-latest
+    steps:
+      # ---------------------------------------------------------
+      # 1. Checkout the Hub Repo
+      # ---------------------------------------------------------
+      - name: Checkout Hub
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------
+      # 2. Setup Environment
+      # ---------------------------------------------------------
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with: { node-version: '18' }
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with: { python-version: '3.x' }
+
+      # ---------------------------------------------------------
+      # 3. Install Dependencies
+      # ---------------------------------------------------------
+      - name: Install Dependencies
+        run: |
+          npm install openapi-diff @stoplight/spectral-cli
+          pip install PyYAML
+
+      # ========================================================
+      # SCENARIO: ROBUST MIX (The Ultimate Test)
+      # Tests: Legacy Ignore, Modern Fail, New Fail, Schema Copying
+      # ========================================================
+      - name: 🧪 Run Robust Mix Test
+        run: |
+          echo "--- 1. Generating Diff (Main vs PR) ---"
+          # We use the same inline Node script logic as the main pipeline
+          node -e "
+            const fs = require('fs'); const diff = require('openapi-diff');
+            const oldSpec = fs.readFileSync('tests/main.yaml', 'utf8');
+            const newSpec = fs.readFileSync('tests/pr_robust_mix.yaml', 'utf8');
+            diff.diffSpecs({ sourceSpec: { content: oldSpec, location: 'old', format: 'openapi3' }, destinationSpec: { content: newSpec, location: 'new', format: 'openapi3' } })
+            .then(res => fs.writeFileSync('diff.json', JSON.stringify(res)));
+          "
+          
+          # Setup simulation files (The script looks for these names)
+          cp tests/pr_robust_mix.yaml swagger_head.yaml
+          cp tests/main.yaml swagger_main.yaml
+
+          echo "--- 2. Running Generator Script ---"
+          # We pass the baseline filename located in tests/
+          python scripts/generate_partial_spec.py "tests/baseline.yaml"
+
+          echo "--- 3. Verifying Logic (Assertions) ---"
+          
+          # A. Check Legacy Filtering (Should NOT be in partial spec)
+          if grep -q "/legacy/users" partial_spec.json; then
+             echo "❌ FAILURE: Logic Error. Legacy endpoint was incorrectly included!"
+             exit 1
+          fi
+
+          # B. Check Modern Inclusion (Should BE in partial spec)
+          if ! grep -q "/modern/orders" partial_spec.json; then
+             echo "❌ FAILURE: Logic Error. Modified modern endpoint was skipped!"
+             exit 1
+          fi
+
+          # C. Check New Inclusion (Should BE in partial spec)
+          if ! grep -q "/new/broken" partial_spec.json; then
+             echo "❌ FAILURE: Logic Error. New endpoint was skipped!"
+             exit 1
+          fi
+
+          # D. Check Schema Copying (Root AND Leaf must exist)
+          if ! grep -q "Leaf" partial_spec.json; then
+             echo "❌ FAILURE: Logic Error. Transitive schema 'Leaf' missing!"
+             exit 1
+          fi
+
+          echo "✅ LOGIC PASSED: Partial spec contents are exactly as expected."
+
+          echo "--- 4. Running Spectral (Expect FAILURE) ---"
+          # We expect failure because /modern/orders and /new/broken have errors.
+          # The '!' checks for exit code 1 (failure), which is what we want here.
+          if ! npx spectral lint partial_spec.json --ruleset .spectral.yaml; then
+            echo "✅ SUCCESS: Pipeline correctly blocked the bad code."
+          else
+            echo "❌ FAILURE: Pipeline let bad code through! (Spectral passed when it should have failed)"
+            exit 1
+          fi

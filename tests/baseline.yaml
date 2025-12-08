@@ -1,0 +1,12 @@
+openapi: 3.0.1
+info:
+  title: Baseline Spec
+  version: 1.0.0
+paths:
+  /legacy/users:
+    get:
+      summary: Ancient User Endpoint
+      # No description here (It is bad legacy code)
+      responses:
+        '200':
+          description: OK

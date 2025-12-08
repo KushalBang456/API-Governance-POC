@@ -1,0 +1,21 @@
+openapi: 3.0.1
+info:
+  title: Main Branch Spec
+  version: 1.1.0
+paths:
+  # Legacy (Inherited from Baseline)
+  /legacy/users:
+    get:
+      summary: Ancient User Endpoint
+      responses:
+        '200':
+          description: OK
+  
+  # Modern (Added recently, currently VALID)
+  /modern/orders:
+    get:
+      summary: Recent Orders
+      description: Returns recent orders. # <--- Currently has description
+      responses:
+        '200':
+          description: OK

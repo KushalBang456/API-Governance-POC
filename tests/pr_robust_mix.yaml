@@ -1,0 +1,55 @@
+openapi: 3.0.1
+info:
+  title: Robust Mix Test
+  version: 1.2.0
+paths:
+  # 1. LEGACY (Modified & Broken) -> Should be IGNORED
+  /legacy/users:
+    get:
+      summary: Ancient User Endpoint
+      # description: Still missing
+      responses:
+        '200':
+          description: OK
+
+  # 2. MODERN (Modified & Broken) -> Should be CAUGHT
+  /modern/orders:
+    get:
+      summary: Recent Orders
+      # description: REMOVED (Violation!)
+      responses:
+        '200':
+          description: OK
+
+  # 3. NEW BROKEN (Added & Broken) -> Should be CAUGHT
+  /new/broken:
+    post:
+      summary: I am new and broken
+      # No description (Violation!)
+      responses:
+        '200':
+          description: OK
+
+  # 4. NEW VALID (Added & Complex) -> Should be COPIED with Schemas
+  /new/deep-ref:
+    post:
+      summary: Deep Ref Test
+      description: I am valid and complex.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Root' # <--- Needs Root
+      responses:
+        '200':
+          description: OK
+
+components:
+  schemas:
+    Root:
+      type: object
+      properties:
+        child:
+          $ref: '#/components/schemas/Leaf' # <--- Needs Leaf
+    Leaf:
+      type: string
