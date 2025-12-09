@@ -38,14 +38,78 @@ jobs:
           npm install openapi-diff @stoplight/spectral-cli
           pip install PyYAML
 
-# ========================================================
+      # # ========================================================
+      # # SCENARIO: ROBUST MIX (The Ultimate Test)
+      # # Tests: 
+      # # 1. Modifying Legacy GET -> IGNORE
+      # # 2. Adding Legacy POST   -> INCLUDE
+      # # 3. Modifying Modern GET -> INCLUDE
+      # # 4. Adding Modern POST   -> INCLUDE
+      # # 5. Adding New Path      -> INCLUDE
+      # # ========================================================
+      # - name: 🧪 Run Robust Mix Test
+      #   run: |
+      #     echo "--- 1. Generating Diff ---"
+      #     node -e "
+      #       const fs = require('fs'); const diff = require('openapi-diff');
+      #       const oldSpec = fs.readFileSync('tests/main.yaml', 'utf8');
+      #       const newSpec = fs.readFileSync('tests/pr_robust_mix.yaml', 'utf8');
+      #       diff.diffSpecs({ sourceSpec: { content: oldSpec, location: 'old', format: 'openapi3' }, destinationSpec: { content: newSpec, location: 'new', format: 'openapi3' } })
+      #       .then(res => fs.writeFileSync('diff.json', JSON.stringify(res, null, 2)));
+      #     "
+          
+      #     # Setup simulation files
+      #     cp tests/pr_robust_mix.yaml swagger_head.yaml
+      #     cp tests/main.yaml swagger_main.yaml
+
+      #     echo "--- 2. Running Generator Script ---"
+      #     python scripts/generate_partial_spec.py "tests/baseline.yaml"
+
+      #     echo "🔍 DEBUG: CONTENT OF PARTIAL_SPEC.JSON"
+      #     cat partial_spec.json
+      #     echo "--------------------------------------"
+
+      #     echo "--- 3. Verifying Logic (Assertions) ---"
+          
+      #     # A. Check Legacy Modification (GET /legacy/users should be IGNORED)
+      #     # We check if the 'get' method exists under /legacy/users
+      #     if grep -q '"/legacy/users"' partial_spec.json && grep -A 5 '"/legacy/users"' partial_spec.json | grep -q '"get"'; then
+      #        echo "❌ FAILURE: Modified Legacy GET was incorrectly included!"
+      #        exit 1
+      #     fi
+
+      #     # B. Check Legacy New Method (POST /legacy/users should be INCLUDED)
+      #     if ! grep -q '"/legacy/users"' partial_spec.json || ! grep -A 5 '"/legacy/users"' partial_spec.json | grep -q '"post"'; then
+      #        echo "❌ FAILURE: New method on Legacy path was skipped!"
+      #        exit 1
+      #     fi
+
+      #     # C. Check Modern (POST /modern/orders should be INCLUDED)
+      #     if ! grep -q '"/modern/orders"' partial_spec.json; then
+      #        echo "❌ FAILURE: Modern endpoint was skipped!"
+      #        exit 1
+      #     fi
+
+      #     # D. Check New Inclusion (POST /new/broken should be INCLUDED)
+      #     if ! grep -q '"/new/broken"' partial_spec.json; then
+      #        echo "❌ FAILURE: New endpoint was skipped!"
+      #        exit 1
+      #     fi
+
+      #     echo "✅ LOGIC PASSED: Partial spec contents are correct."
+
+      #     echo "--- 4. Running Spectral (Expect FAILURE) ---"
+      #     # We expect failure because the new POST methods have no descriptions
+      #     if ! npx spectral lint partial_spec.json --ruleset .spectral.yaml; then
+      #       echo "✅ SUCCESS: Pipeline correctly blocked the bad code."
+      #     else
+      #       echo "❌ FAILURE: Pipeline let bad code through!"
+      #       exit 1
+      #     fi
+
+
+      # ========================================================
       # SCENARIO: ROBUST MIX (The Ultimate Test)
-      # Tests: 
-      # 1. Modifying Legacy GET -> IGNORE
-      # 2. Adding Legacy POST   -> INCLUDE
-      # 3. Modifying Modern GET -> INCLUDE
-      # 4. Adding Modern POST   -> INCLUDE
-      # 5. Adding New Path      -> INCLUDE
       # ========================================================
       - name: 🧪 Run Robust Mix Test
         run: |
@@ -69,34 +133,37 @@ jobs:
           cat partial_spec.json
           echo "--------------------------------------"
 
-          echo "--- 3. Verifying Logic (Assertions) ---"
-          
-          # A. Check Legacy Modification (GET /legacy/users should be IGNORED)
-          # We check if the 'get' method exists under /legacy/users
-          if grep -q '"/legacy/users"' partial_spec.json && grep -A 5 '"/legacy/users"' partial_spec.json | grep -q '"get"'; then
-             echo "❌ FAILURE: Modified Legacy GET was incorrectly included!"
-             exit 1
-          fi
+          echo "--- 3. Verifying Logic (Python Assertions) ---"
+          python -c "
+          import json, sys
 
-          # B. Check Legacy New Method (POST /legacy/users should be INCLUDED)
-          if ! grep -q '"/legacy/users"' partial_spec.json || ! grep -A 5 '"/legacy/users"' partial_spec.json | grep -q '"post"'; then
-             echo "❌ FAILURE: New method on Legacy path was skipped!"
-             exit 1
-          fi
+          with open('partial_spec.json') as f:
+              spec = json.load(f)
+          paths = spec.get('paths', {})
 
-          # C. Check Modern (POST /modern/orders should be INCLUDED)
-          if ! grep -q '"/modern/orders"' partial_spec.json; then
-             echo "❌ FAILURE: Modern endpoint was skipped!"
-             exit 1
-          fi
+          def check(path, method, should_exist):
+              exists = path in paths and method in paths[path]
+              status = '✅' if exists == should_exist else '❌'
+              state = 'PRESENT' if exists else 'ABSENT'
+              expected = 'PRESENT' if should_exist else 'ABSENT'
+              print(f'{status} {method.upper()} {path}: {state} (Expected: {expected})')
+              if exists != should_exist:
+                  sys.exit(1)
 
-          # D. Check New Inclusion (POST /new/broken should be INCLUDED)
-          if ! grep -q '"/new/broken"' partial_spec.json; then
-             echo "❌ FAILURE: New endpoint was skipped!"
-             exit 1
-          fi
+          print('--- LEGACY API CHECKS ---')
+          check('/legacy/users', 'get', False)  # 1. Unchanged -> ABSENT
+          check('/legacy/users', 'put', False)  # 2. Modified -> ABSENT (Ignored)
+          check('/legacy/users', 'post', True)  # 3. New Method -> PRESENT
 
-          echo "✅ LOGIC PASSED: Partial spec contents are correct."
+          print('--- MODERN API CHECKS ---')
+          check('/modern/orders', 'get', False) # 4. Unchanged -> ABSENT
+          check('/modern/orders', 'post', True) # 5. New Method -> PRESENT
+          check('/modern/orders', 'put', True)  # 6. Modified -> PRESENT
+
+          print('--- NEW API CHECKS ---')
+          check('/new/broken', 'post', True)    # 7. New Path -> PRESENT
+          check('/new/deep-ref', 'post', True)  # 8. New Path -> PRESENT
+          "
 
           echo "--- 4. Running Spectral (Expect FAILURE) ---"
           # We expect failure because the new POST methods have no descriptions

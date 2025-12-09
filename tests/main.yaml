@@ -1,19 +1,138 @@
+# openapi: 3.0.1
+# info:
+#   title: Main Branch Spec
+#   version: 1.1.0
+# paths:
+#   /legacy/users:
+#     get:
+#       summary: Ancient User Endpoint
+#       responses:
+#         '200':
+#           description: OK
+  
+#   /modern/orders:
+#     get:
+#       summary: Recent Orders
+#       description: Returns recent orders.
+#       responses:
+#         '200':
+#           description: OK
+
+
 openapi: 3.0.1
 info:
   title: Main Branch Spec
   version: 1.1.0
 paths:
+  # 1. LEGACY (Matches Baseline Exactly)
   /legacy/users:
     get:
       summary: Ancient User Endpoint
+      parameters:
+        - name: limit
+          in: query
+          description: Max records
+          schema:
+            type: integer
+      security:
+        - api_key: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyUser'
+    put:
+      summary: Update Ancient User
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyUser'
+      responses:
+        '200':
+          description: Updated OK
   
+  # 2. MODERN (Valid in Prod - Feature Rich)
   /modern/orders:
     get:
       summary: Recent Orders
       description: Returns recent orders.
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+        - name: X-Request-ID
+          in: header
+          description: Tracing ID
+          schema:
+            type: string
+            format: uuid
+      security:
+        - api_key: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+    
+    # --- ADDED: COMPLEX MODERN METHOD ---
+    put:
+      summary: Update Order
+      description: Updates an existing order.
+      operationId: updateOrder
+      requestBody:
+        description: Order payload
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Order'
+      responses:
+        '200':
+          description: Order Updated
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    LegacyUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+    # NEW SCHEMA for Modern Endpoint
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        amount:
+          type: number
+        status:
+          type: string
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+  securitySchemes:
+    api_key:
+      type: apiKey
+      name: api_key
+      in: header

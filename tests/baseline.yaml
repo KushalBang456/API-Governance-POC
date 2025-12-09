@@ -1,3 +1,17 @@
+# openapi: 3.0.1
+# info:
+#   title: Baseline Spec
+#   version: 1.0.0
+# paths:
+#   /legacy/users:
+#     get:
+#       summary: Ancient User Endpoint
+#       # No description here (It is bad legacy code)
+#       responses:
+#         '200':
+#           description: OK
+
+
 openapi: 3.0.1
 info:
   title: Baseline Spec
@@ -6,7 +20,47 @@ paths:
   /legacy/users:
     get:
       summary: Ancient User Endpoint
-      # No description here (It is bad legacy code)
+      # Violation: No Description
+      parameters:
+        - name: limit
+          in: query
+          description: Max records
+          schema:
+            type: integer
+      security:
+        - api_key: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyUser'
+    
+    # --- ADDED NEW LEGACY METHOD ---
+    put:
+      summary: Update Ancient User
+      # Violation: No Description
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyUser'
+      responses:
+        '200':
+          description: Updated OK
+
+components:
+  schemas:
+    LegacyUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+  securitySchemes:
+    api_key:
+      type: apiKey
+      name: api_key
+      in: header

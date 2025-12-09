@@ -1,53 +1,212 @@
+# openapi: 3.0.1
+# info:
+#   title: Robust Mix Test
+#   version: 1.2.0
+# paths:
+#   /legacy/users:
+#     get:
+#       summary: Ancient User Endpoint
+#       responses:
+#         '200':
+#           description: OK
+#     post:
+#       summary: Legacy Update
+#       responses:
+#         '200':
+#           description: OK
+
+#   /modern/orders:
+#     get:
+#       summary: Recent Orders
+#       description: Returns recent orders.
+#       responses:
+#         '200':
+#           description: OK
+#     post:
+#       summary: Create Order
+#       responses:
+#         '200':
+#           description: OK
+
+#   /new/broken:
+#     post:
+#       summary: I am new and broken
+#       responses:
+#         '200':
+#           description: OK
+
+#   /new/deep-ref:
+#     post:
+#       summary: Deep Ref Test
+#       description: I am valid and complex.
+#       requestBody:
+#         content:
+#           application/json:
+#             schema:
+#               $ref: '#/components/schemas/Root'
+#       responses:
+#         '200':
+#           description: OK
+
+# components:
+#   schemas:
+#     Root:
+#       type: object
+#       properties:
+#         child:
+#           $ref: '#/components/schemas/Leaf'
+#     Leaf:
+#       type: string
+
+
+
+
 openapi: 3.0.1
 info:
   title: Robust Mix Test
   version: 1.2.0
 paths:
-  # 1. LEGACY (Modified)
-  # Change: Added a POST method (Guaranteed Diff)
-  # Violation: No description.
-  # Expected: Python should IGNORE this (It's in Baseline).
+  # =========================================================
+  # PATH: /legacy/users (Exists in Baseline)
+  # =========================================================
   /legacy/users:
+    # 1. NOT CHANGING LEGACY API
+    # Identical to main.yaml.
+    # Result: No Diff -> Python script never sees it -> IGNORED.
     get:
       summary: Ancient User Endpoint
+      parameters:
+        - name: limit
+          in: query
+          description: Max records
+          schema:
+            type: integer
+      security:
+        - api_key: []
       responses:
         '200':
           description: OK
-    post: # <--- NEW METHOD ADDED
-      summary: Legacy Update
-      # No description
-      responses:
-        '200':
-          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyUser'
 
-  # 2. MODERN (Modified)
-  # Change: Added a POST method (Guaranteed Diff)
-  # Violation: No description.
-  # Expected: Python should INCLUDE this. Strict Lint should FAIL.
+    # 2. CHANGING LEGACY API
+    # Change: Added 'legacy_extra_param' (Diff sees this).
+    # Result: Python detects change in PUT@/legacy/users. Checks Baseline. Finds it. -> IGNORED.
+    put:
+      summary: Update Ancient User
+      parameters:
+        - name: legacy_extra_param # <--- NEW PARAMETER
+          in: query
+          schema: { type: string }
+          # No description (Violation, but should be ignored)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyUser'
+      responses:
+        '200':
+          description: Updated OK
+
+    # 3. ADDING NEW METHOD IN LEGACY API
+    # Change: New POST method.
+    # Result: Python calculates POST@/legacy/users. Not in Baseline. -> INCLUDED.
+    post:
+      summary: Legacy Create
+      # No description (Violation -> Should FAIL Strict Lint)
+      responses:
+        '200':
+          description: Created
+
+  # =========================================================
+  # PATH: /modern/orders (Exists in Main, NOT in Baseline)
+  # =========================================================
   /modern/orders:
+    # 4. NOT CHANGING MODERN API
+    # Identical to main.yaml.
+    # Result: No Diff -> Python script never sees it -> IGNORED.
     get:
       summary: Recent Orders
       description: Returns recent orders.
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+        - name: sort
+          in: query
+          description: Sort field
+          schema:
+            type: string
+      security:
+        - api_key: []
       responses:
         '200':
           description: OK
-    post: # <--- NEW METHOD ADDED
-      summary: Create Order
-      # No description! (Violation)
-      responses:
-        '200':
-          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
 
-  # 3. NEW BROKEN (Added)
+    # 6. MODIFYING MODERN API
+    # Change: Added 'modern_extra_param'.
+    # Result: Python detects change. Not in Baseline. -> INCLUDED.
+    put:
+      summary: Update Order
+      description: Updates an existing order.
+      parameters:
+        - name: modern_extra_param # <--- NEW PARAMETER
+          in: query
+          schema: { type: string }
+          # No description (Violation -> Should FAIL Strict Lint)
+      operationId: updateOrder
+      requestBody:
+        description: Order payload
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Order'
+      responses:
+        '200':
+          description: Order Updated
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    # 5. ADDING NEW METHOD IN MODERN API
+    # Change: New POST method.
+    # Result: Python detects new operation. Not in Baseline. -> INCLUDED.
+    post:
+      summary: Create Order
+      # No description (Violation -> Should FAIL Strict Lint)
+      responses:
+        '200':
+          description: Created
+
+  # =========================================================
+  # NEW APIs (Test Cases 7 & 8)
+  # =========================================================
+  
+  # 7. ADDING NEW API (Broken)
+  # Result: INCLUDED -> FAILS Strict Lint (No description).
   /new/broken:
     post:
       summary: I am new and broken
-      # No description
       responses:
         '200':
           description: OK
 
-  # 4. NEW VALID (Added & Complex)
+  # 8. ADDING NEW API (Deep Ref + Good)
+  # Result: INCLUDED -> PASSES Strict Lint -> COPIES schemas (Root -> Leaf).
   /new/deep-ref:
     post:
       summary: Deep Ref Test
@@ -63,10 +222,44 @@ paths:
 
 components:
   schemas:
+    # --- LEGACY SCHEMAS ---
+    LegacyUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+    
+    # --- MODERN SCHEMAS ---
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        amount:
+          type: number
+        status:
+          type: string
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+
+    # --- NEW SCHEMAS (For Deep Ref Test) ---
     Root:
       type: object
       properties:
         child:
-          $ref: '#/components/schemas/Leaf'
+          $ref: '#/components/schemas/Leaf' # Transitive dependency
     Leaf:
       type: string
+
+  securitySchemes:
+    api_key:
+      type: apiKey
+      name: api_key
+      in: header
