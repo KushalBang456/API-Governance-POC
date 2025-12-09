@@ -289,9 +289,8 @@ jobs:
       #       //   core.setFailed(`❌ Governance Check Failed: ${strictErrors} strict errors found.`);
       #       // }
 
-
       # ---------------------------------------------------------
-      # 10. Generate Beautiful Report & Manage PR Comments (FIXED)
+      # 10. Generate Beautiful Report & Manage PR Comments (ROBUST)
       # ---------------------------------------------------------
       - name: 📊 Generate Report & PR Comments
         uses: actions/github-script@v7
@@ -299,13 +298,10 @@ jobs:
           script: |
             const fs = require('fs');
 
-            // --- 1. Load Data ---
+            // --- 1. Load Results ---
             function loadResults(filename) {
-              if (fs.existsSync(filename)) {
-                try { return JSON.parse(fs.readFileSync(filename, 'utf8')); } 
-                catch (e) { return []; }
-              }
-              return [];
+              try { return fs.existsSync(filename) ? JSON.parse(fs.readFileSync(filename, 'utf8')) : []; } 
+              catch (e) { return []; }
             }
 
             const strictResults = loadResults('strict.json');
@@ -313,8 +309,7 @@ jobs:
 
             // --- 2. Helper: Generate Summary Table ---
             function formatPath(pathArray) {
-              if (!pathArray || pathArray.length === 0) return "root";
-              return pathArray.join(" > ");
+              return (!pathArray || pathArray.length === 0) ? "root" : pathArray.join(" > ");
             }
 
             function generateSummaryTable(results, title, icon, isStrict) {
@@ -332,60 +327,48 @@ jobs:
                 const logicalPath = formatPath(r.path);
                 
                 md += `| ${sevIcon} | **${r.code}** | \`${logicalPath}\` | ${msg} ${lineInfo} |\n`;
-
-                // Annotations
-                const annotationProps = { 
-                  title: `${r.code}`,
-                  file: r.source || 'swagger.yaml', 
-                  startLine: r.range.start.line + 1 
-                };
-                if (isError) core.error(r.message, annotationProps);
-                else core.warning(r.message, annotationProps);
               });
               return md;
             }
 
-            // --- 3. Generate Job Summary (For Actions Tab) ---
+            // --- 3. Update Job Summary (Actions Tab) ---
             let summary = "# API Governance Report 🛡️\n";
             summary += "> **Strict Checks:** Run on new/modified code only. (Blocks PR)\n";
             summary += "> **Advisory Checks:** Run on the full file. (Tech Debt)\n";
             summary += generateSummaryTable(strictResults, "Strict Checks (New Code)", "🛑", true);
             summary += "\n---\n";
             summary += generateSummaryTable(advisoryResults, "Advisory Checks (Tech Debt)", "⚠️", false);
-            
             await core.summary.addRaw(summary).write();
 
 
-            // --- 4. PR Comment Logic (The Fixed Part) ---
+            // --- 4. PR Comment Logic (Title-Based Matching) ---
             if (!context.issue.number) {
               console.log("Not a PR, skipping comments.");
               return;
             }
 
-            // A. Define Unique Markers
-            const STRICT_MARKER = '';
-            const ADVISORY_MARKER = '';
+            // Define Distinct Titles
+            const STRICT_TITLE = "🛑 API Governance: Strict Checks";
+            const ADVISORY_TITLE = "⚠️ API Governance: Advisory Checks";
 
-            // B. Fetch All Comments ONCE
-            console.log("Fetching existing comments...");
+            // Fetch Comments ONCE
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
 
-            // C. Find specific existing comments (if they exist)
-            const existingStrictComment = comments.find(c => c.body.includes(STRICT_MARKER));
-            const existingAdvisoryComment = comments.find(c => c.body.includes(ADVISORY_MARKER));
+            // Find comments by checking if the BODY contains the unique TITLE
+            const existingStrictComment = comments.find(c => c.body.includes(STRICT_TITLE));
+            const existingAdvisoryComment = comments.find(c => c.body.includes(ADVISORY_TITLE));
 
-            // D. Helper to Create or Update
-            async function handleComment(marker, title, results, existingComment) {
+            async function handleComment(title, results, existingComment) {
               const errors = results.filter(r => r.severity === 0).length;
               const warnings = results.filter(r => r.severity !== 0).length;
               const total = errors + warnings;
 
-              // Build Body
-              let body = `${marker}\n### ${title}\n`;
+              // Build Comment Body
+              let body = `### ${title}\n`;
               if (total === 0) {
                 body += `✅ **No issues found!**\n\n_Governance check passed._`;
               } else {
@@ -395,8 +378,11 @@ jobs:
                 body += `_Check the [Job Summary](${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details._`;
               }
 
+              // LOGIC:
+              // 1. If comment exists -> UPDATE it (even if fixed, to show Green status).
+              // 2. If no comment -> CREATE it ONLY if there are issues. (Silence on success).
+              
               if (existingComment) {
-                // CASE 1: Comment exists. We MUST update it (to either show new errors or show "Fixed").
                 console.log(`Updating existing comment for: ${title}`);
                 await github.rest.issues.updateComment({
                   owner: context.repo.owner,
@@ -404,24 +390,22 @@ jobs:
                   comment_id: existingComment.id,
                   body: body
                 });
+              } else if (total > 0) {
+                console.log(`Creating new comment for: ${title}`);
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: body
+                });
               } else {
-                // CASE 2: Comment does not exist.
-                // We only create it if there are actual issues (total > 0).
-                // If total is 0 and no comment exists, we stay silent.
-                if (total > 0) {
-                  console.log(`Creating new comment for: ${title}`);
-                  await github.rest.issues.createComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: context.issue.number,
-                    body: body
-                  });
-                } else {
-                  console.log(`No issues for ${title} and no previous comment. Staying silent.`);
-                }
+                console.log(`No issues for ${title} and no previous comment. Staying silent.`);
               }
             }
 
-            // E. Execute Handlers Independently
-            await handleComment(STRICT_MARKER, "🛑 API Governance: Strict Checks", strictResults, existingStrictComment);
-            await handleComment(ADVISORY_MARKER, "⚠️ API Governance: Advisory Checks", advisoryResults, existingAdvisoryComment);
+            // Run Handlers
+            console.log("--- Processing Strict Checks ---");
+            await handleComment(STRICT_TITLE, strictResults, existingStrictComment);
+            
+            console.log("--- Processing Advisory Checks ---");
+            await handleComment(ADVISORY_TITLE, advisoryResults, existingAdvisoryComment);
