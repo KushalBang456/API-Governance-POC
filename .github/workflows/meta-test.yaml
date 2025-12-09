@@ -124,7 +124,7 @@ jobs:
         run: npx spectral lint partial_spec.json --ruleset .spectral.yaml --format json --output spectral-results.json || true
 
       # ---------------------------------------------------------
-      # 6. Process Results (Annotations & Summary)
+      # 6. Process Results (Clean Annotations & Summary)
       # ---------------------------------------------------------
       - name: 📊 Process Results
         shell: python
@@ -151,8 +151,10 @@ jobs:
 
           # 3. Build Table & Annotations
           md_output += f"Found **{len(results)}** issues in `partial_spec.json`:\n\n"
-          md_output += "| Severity | Rule | Message | Line |\n"
-          md_output += "| :---: | :--- | :--- | :---: |\n"
+          
+          # --- UPDATED: Removed 'Line' Column from Table ---
+          md_output += "| Severity | Rule | Message |\n"
+          md_output += "| :---: | :--- | :--- |\n"
 
           # Severity: 0=Error, 1=Warn, 2=Info, 3=Hint
           sev_map = {0: "ERROR", 1: "WARN", 2: "INFO", 3: "HINT"}
@@ -162,23 +164,26 @@ jobs:
 
           for r in results:
               severity = r.get('severity', 0)
-              code = r.get('code', 'unknown')
+              code = str(r.get('code', 'governance-issue')) # Ensure string
               message = r.get('message', '')
               source = r.get('source', 'partial_spec.json')
-              
-              # Spectral uses 0-indexed lines, GitHub uses 1-indexed
               line = r['range']['start']['line'] + 1
               
               # --- A. GITHUB ANNOTATIONS ---
               gh_level = "error" if severity == 0 else "warning"
+              
+              # We explicitly set title={code}. 
+              # This forces the bold header to be the Rule Name (e.g. "path-params")
+              # instead of the Step Name ("Process Results").
               print(f"::{gh_level} file={source},line={line},title={code}::{message}")
 
               # --- B. MARKDOWN SUMMARY ---
               icon = icon_map.get(severity, "🔴")
               level_name = sev_map.get(severity, "ERROR")
-              safe_msg = message.replace("|", "\|") # Escape pipes for table
+              safe_msg = message.replace("|", "\|") 
               
-              md_output += f"| {icon} {level_name} | `{code}` | {safe_msg} | `L{line}` |\n"
+              # Updated: Removed Line column from row
+              md_output += f"| {icon} {level_name} | `{code}` | {safe_msg} |\n"
 
               if severity == 0:
                   has_errors = True
