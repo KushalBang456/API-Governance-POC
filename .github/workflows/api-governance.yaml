@@ -291,7 +291,7 @@ jobs:
 
 
       # ---------------------------------------------------------
-      # 10. Generate Beautiful Report & Manage PR Comments
+      # 10. Generate Beautiful Report & Manage PR Comments (FIXED)
       # ---------------------------------------------------------
       - name: 📊 Generate Report & PR Comments
         uses: actions/github-script@v7
@@ -311,7 +311,7 @@ jobs:
             const strictResults = loadResults('strict.json');
             const advisoryResults = loadResults('advisory.json');
 
-            // --- 2. Helper: Process Results for Summary (The detailed table) ---
+            // --- 2. Helper: Generate Summary Table ---
             function formatPath(pathArray) {
               if (!pathArray || pathArray.length === 0) return "root";
               return pathArray.join(" > ");
@@ -345,7 +345,7 @@ jobs:
               return md;
             }
 
-            // --- 3. Generate Job Summary (Visible in Actions Tab) ---
+            // --- 3. Generate Job Summary (For Actions Tab) ---
             let summary = "# API Governance Report 🛡️\n";
             summary += "> **Strict Checks:** Run on new/modified code only. (Blocks PR)\n";
             summary += "> **Advisory Checks:** Run on the full file. (Tech Debt)\n";
@@ -356,25 +356,36 @@ jobs:
             await core.summary.addRaw(summary).write();
 
 
-            // --- 4. PR Comment Logic (The new part) ---
+            // --- 4. PR Comment Logic (The Fixed Part) ---
             if (!context.issue.number) {
               console.log("Not a PR, skipping comments.");
               return;
             }
 
-            // Define Markers to identify our comments
+            // A. Define Unique Markers
             const STRICT_MARKER = '';
             const ADVISORY_MARKER = '';
 
-            async function manageComment(marker, title, results) {
-              // Calculate counts
+            // B. Fetch All Comments ONCE
+            console.log("Fetching existing comments...");
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            // C. Find specific existing comments (if they exist)
+            const existingStrictComment = comments.find(c => c.body.includes(STRICT_MARKER));
+            const existingAdvisoryComment = comments.find(c => c.body.includes(ADVISORY_MARKER));
+
+            // D. Helper to Create or Update
+            async function handleComment(marker, title, results, existingComment) {
               const errors = results.filter(r => r.severity === 0).length;
               const warnings = results.filter(r => r.severity !== 0).length;
               const total = errors + warnings;
 
               // Build Body
               let body = `${marker}\n### ${title}\n`;
-              
               if (total === 0) {
                 body += `✅ **No issues found!**\n\n_Governance check passed._`;
               } else {
@@ -384,19 +395,9 @@ jobs:
                 body += `_Check the [Job Summary](${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details._`;
               }
 
-              // List existing comments
-              const { data: comments } = await github.rest.issues.listComments({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-              });
-
-              // Find previous comment by this bot containing our marker
-              const existingComment = comments.find(c => c.body.includes(marker));
-
               if (existingComment) {
-                // UPDATE existing comment (Always update to show latest state, even if fixed)
-                console.log(`Updating existing comment for ${title}`);
+                // CASE 1: Comment exists. We MUST update it (to either show new errors or show "Fixed").
+                console.log(`Updating existing comment for: ${title}`);
                 await github.rest.issues.updateComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
@@ -404,9 +405,11 @@ jobs:
                   body: body
                 });
               } else {
-                // CREATE new comment ONLY if there are issues
+                // CASE 2: Comment does not exist.
+                // We only create it if there are actual issues (total > 0).
+                // If total is 0 and no comment exists, we stay silent.
                 if (total > 0) {
-                  console.log(`Creating new comment for ${title}`);
+                  console.log(`Creating new comment for: ${title}`);
                   await github.rest.issues.createComment({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
@@ -414,13 +417,11 @@ jobs:
                     body: body
                   });
                 } else {
-                   console.log(`No issues found for ${title} and no previous comment exists. Staying silent.`);
+                  console.log(`No issues for ${title} and no previous comment. Staying silent.`);
                 }
               }
             }
 
-            // Run for Strict
-            await manageComment(STRICT_MARKER, "🛑 API Governance: Strict Checks", strictResults);
-            
-            // Run for Advisory
-            await manageComment(ADVISORY_MARKER, "⚠️ API Governance: Advisory Checks", advisoryResults);
+            // E. Execute Handlers Independently
+            await handleComment(STRICT_MARKER, "🛑 API Governance: Strict Checks", strictResults, existingStrictComment);
+            await handleComment(ADVISORY_MARKER, "⚠️ API Governance: Advisory Checks", advisoryResults, existingAdvisoryComment);
