@@ -70,9 +70,7 @@ paths:
   # PATH: /legacy/users (Exists in Baseline)
   # =========================================================
   /legacy/users:
-    # 1. NOT CHANGING LEGACY API
-    # Identical to main.yaml.
-    # Result: No Diff -> Python script never sees it -> IGNORED.
+    # 1. NOT CHANGING LEGACY API (GET)
     get:
       summary: Ancient User Endpoint
       parameters:
@@ -91,16 +89,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/LegacyUser'
 
-    # 2. CHANGING LEGACY API
-    # Change: Added 'legacy_extra_param' (Diff sees this).
+    # 2. CHANGING LEGACY API (PUT)
+    # Change: Added REQUIRED parameter (Forces Diff)
     # Result: Python detects change in PUT@/legacy/users. Checks Baseline. Finds it. -> IGNORED.
     put:
       summary: Update Ancient User
       parameters:
-        - name: legacy_extra_param # <--- NEW PARAMETER
+        - name: legacy_FORCE_DIFF
           in: query
+          required: true # <--- Forces Diff
           schema: { type: string }
-          # No description (Violation, but should be ignored)
+          # No description
       requestBody:
         content:
           application/json:
@@ -110,12 +109,12 @@ paths:
         '200':
           description: Updated OK
 
-    # 3. ADDING NEW METHOD IN LEGACY API
+    # 3. ADDING NEW METHOD IN LEGACY API (POST)
     # Change: New POST method.
     # Result: Python calculates POST@/legacy/users. Not in Baseline. -> INCLUDED.
     post:
       summary: Legacy Create
-      # No description (Violation -> Should FAIL Strict Lint)
+      # No description
       responses:
         '200':
           description: Created
@@ -124,9 +123,7 @@ paths:
   # PATH: /modern/orders (Exists in Main, NOT in Baseline)
   # =========================================================
   /modern/orders:
-    # 4. NOT CHANGING MODERN API
-    # Identical to main.yaml.
-    # Result: No Diff -> Python script never sees it -> IGNORED.
+    # 4. NOT CHANGING MODERN API (GET)
     get:
       summary: Recent Orders
       description: Returns recent orders.
@@ -153,17 +150,18 @@ paths:
                 items:
                   $ref: '#/components/schemas/Order'
 
-    # 6. MODIFYING MODERN API
-    # Change: Added 'modern_extra_param'.
+    # 6. MODIFYING MODERN API (PUT)
+    # Change: Added REQUIRED parameter (Forces Diff)
     # Result: Python detects change. Not in Baseline. -> INCLUDED.
     put:
       summary: Update Order
       description: Updates an existing order.
       parameters:
-        - name: modern_extra_param # <--- NEW PARAMETER
+        - name: modern_FORCE_DIFF
           in: query
+          required: true # <--- Forces Diff
           schema: { type: string }
-          # No description (Violation -> Should FAIL Strict Lint)
+          # No description
       operationId: updateOrder
       requestBody:
         description: Order payload
@@ -182,22 +180,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-    # 5. ADDING NEW METHOD IN MODERN API
-    # Change: New POST method.
-    # Result: Python detects new operation. Not in Baseline. -> INCLUDED.
+    # 5. ADDING NEW METHOD IN MODERN API (POST)
     post:
       summary: Create Order
-      # No description (Violation -> Should FAIL Strict Lint)
+      # No description
       responses:
         '200':
           description: Created
 
   # =========================================================
-  # NEW APIs (Test Cases 7 & 8)
+  # NEW APIs
   # =========================================================
   
   # 7. ADDING NEW API (Broken)
-  # Result: INCLUDED -> FAILS Strict Lint (No description).
   /new/broken:
     post:
       summary: I am new and broken
@@ -206,7 +201,6 @@ paths:
           description: OK
 
   # 8. ADDING NEW API (Deep Ref + Good)
-  # Result: INCLUDED -> PASSES Strict Lint -> COPIES schemas (Root -> Leaf).
   /new/deep-ref:
     post:
       summary: Deep Ref Test
@@ -222,7 +216,6 @@ paths:
 
 components:
   schemas:
-    # --- LEGACY SCHEMAS ---
     LegacyUser:
       type: object
       properties:
@@ -230,8 +223,6 @@ components:
           type: integer
         username:
           type: string
-    
-    # --- MODERN SCHEMAS ---
     Order:
       type: object
       properties:
@@ -248,13 +239,11 @@ components:
           type: integer
         message:
           type: string
-
-    # --- NEW SCHEMAS (For Deep Ref Test) ---
     Root:
       type: object
       properties:
         child:
-          $ref: '#/components/schemas/Leaf' # Transitive dependency
+          $ref: '#/components/schemas/Leaf'
     Leaf:
       type: string
 
