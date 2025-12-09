@@ -136,7 +136,7 @@ paths:
         - name: status
           in: query
           description: Status values that need to be considered for filter
-          required: false
+          required: true
           explode: true
           schema:
             type: string
@@ -145,6 +145,13 @@ paths:
               - available
               - pending
               - sold
+              - archived
+        - name: includeMeta
+          in: query
+          description: Include extra metadata about statuses
+          required: false
+          schema:
+            type: boolean
       responses:
         '200':
           description: successful operation
@@ -159,6 +166,21 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Pet'
+        '206':
+          description: Partial results when some statuses are unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Pet'
+                  unavailableStatuses:
+                    type: array
+                    items:
+                      type: string
         '418':
           description: Legacy change marker for governance testing
         '400':
@@ -493,6 +515,12 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Order'
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/Order'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Order'
       responses:
         '200':
           description: Order replaced
@@ -500,8 +528,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Order'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Order'
         '400':
           description: Invalid order payload
+        '409':
+          description: Order version conflict detected
         default:
           description: Unexpected error
           content:
@@ -557,6 +590,12 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: x-trace-id
+          in: header
+          description: Trace identifier for auditing deletes
+          required: false
+          schema:
+            type: string
       responses:
         '200':
           description: order deleted
@@ -566,6 +605,8 @@ paths:
           description: Order not found
         '410':
           description: Order already archived
+        '428':
+          description: Precondition required for delete
         default:
           description: Unexpected error
           content:
