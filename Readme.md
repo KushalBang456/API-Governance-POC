@@ -1,20 +1,18 @@
-# API Governance: Hub & Spoke Linting Pipeline
+﻿# API Governance: Hub & Spoke Linting Pipeline
 
-> A comprehensive guide to the API Governance system for enforcing API standards while managing legacy code
+> Enforce API standards in GitHub Actions while gracefully managing legacy code
 
 ![Status](https://img.shields.io/badge/status-active-success?style=flat-square)
 ![Architecture](https://img.shields.io/badge/architecture-hub%20%26%20spoke-blue?style=flat-square)
 ![Tool](https://img.shields.io/badge/tool-Spectral-orange?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-GitHub%20Actions-2088FF?style=flat-square)
 
-> **🚀 Now Migrated to GitHub Actions!** This project has been converted from Azure DevOps to GitHub Actions. See [GITHUB_ACTIONS_MIGRATION.md](GITHUB_ACTIONS_MIGRATION.md) for the migration guide and updated usage instructions.
-
 **Key Features:**
-- ✅ **Centralized Rule Management** - Update once, apply everywhere
-- ✅ **Zero Legacy Blockers** - New code enforced, legacy code warned
-- ✅ **Automated PR Feedback** - Instant, actionable comments with detailed reports
+- ✅ **Centralized Rule Management** - Update once, apply everywhere via reusable workflows
+- ✅ **Zero Legacy Blockers** - Strict checks on new/modified code, warnings only on legacy
+- ✅ **Automated PR Feedback** - Smart PR comments with detailed Job Summary reports
 - ✅ **Scalable** - Works for 1 project or 100+ microservices
-- ✅ **Smart Commenting** - Concise PR comments with full details in Pipeline Summary tab
+- ✅ **GitHub Native** - Leverages Actions, Releases, annotations, and PR comments
 
 ---
 
@@ -28,558 +26,721 @@
 7. [Maintenance & Benefits](#maintenance--benefits)
 8. [Current API Standards](#current-api-standards)
 9. [Troubleshooting](#troubleshooting)
-10. [Architecture Diagram](#architecture-diagram)
-11. [Key Concepts Explained](#key-concepts-explained)
-12. [Frequently Asked Questions](#frequently-asked-questions-faq)
-13. [File Structure Reference](#file-structure-reference)
+10. [Repository Structure](#repository-structure)
 
 ---
 
 ## 1. Executive Summary
 
 ### The Problem
-Our organization's APIs are inconsistent, creating:
-- ❌ Friction for developer onboarding
-- ❌ Poor experiences for API consumers
-- ❌ Difficult maintenance
-- ❌ Large amounts of legacy code that don't meet modern standards
+Organizations face inconsistent API standards creating:
+- ❌ Developer onboarding friction
+- ❌ Poor consumer experiences
+- ❌ Maintenance nightmares
+- ❌ Years of legacy code that violates modern standards
 
 ### The Challenge
-**How do we enforce new API standards *today* without blocking all development teams while they fix 5-10 years of legacy code?**
+**How do we enforce new API standards *today* without blocking development while teams gradually fix legacy code?**
 
-### The Strategy
-We implement a **"Hub & Spoke"** model that splits validation into two distinct, parallel passes:
+### The Solution
+A **"Hub & Spoke"** GitHub Actions workflow that:
 
-1. ✅ **Block New Violations:** `FAIL` a Pull Request if *any new or modified code* violates our strict ruleset
-2. ⚠️ **Report Legacy Violations:** Only `WARN` developers about legacy code violations (build will *not* fail)
-3. 🎯 **Centralize Logic:** All rules and pipeline logic are managed in a single "Hub" repository, making new rules instantly global
+1. ✅ **Blocks New Violations:** PRs fail if *new or modified* code violates strict rules
+2. ⚠️ **Reports Legacy Issues:** Legacy code violations generate warnings only (non-blocking)
+3. 🎯 **Centralizes Rules:** Single hub repository manages all rules via reusable workflows
+4. 🔄 **Smart Diffing:** Compares PR branch vs base branch, filters legacy ops via baseline
+5. 📊 **Rich Feedback:** PR comments + GitHub Job Summary with detailed tables
 
 ---
 
 ## 2. Quick Start
 
-### For Governance Team (Setting up the Hub)
-The Hub is already configured in this repository! Key files:
-- ✅ `.spectral.yaml` - Strict rules (errors)
-- ✅ `.spectral-warn.yaml` - Advisory rules (warnings)
-- ✅ `templates/api-governance.yaml` - Master pipeline template
-- ✅ `scripts/` - Python and PowerShell helper scripts
+### For Governance Team (Hub Setup)
+The Hub is configured in this repository (`KushalBang456/API-Governance-POC`):
 
-**To add/modify a rule:**
-1. Edit `.spectral.yaml` (for blocking errors) or `.spectral-warn.yaml` (for warnings)
-2. Commit and push to `main`
-3. All projects automatically use the new rules on their next PR ✨
+| File/Folder | Purpose |
+|------------|---------|
+| `.spectral.yaml` | Strict rules (severity: `error`) - blocks PRs |
+| `.spectral-warn.yaml` | Advisory rules (severity: `warn`) - informational only |
+| `.github/workflows/api-governance.yaml` | **Reusable workflow** called by spoke repos (the engine) |
+| `.github/workflows/meta-test.yaml` | **Self-test workflow** - validates 8 governance scenarios on every push/PR |
+| `scripts/generate_partial_spec.py` | Core filter logic: processes diff + deep comparison, removes legacy ops |
+| `baselines/` | Example baseline files (javatest-legacy.yaml, memberdomain-legacy.json) |
+| `tests/` | Test fixtures: baseline.yaml (legacy list), main.yaml (base), pr_robust_mix.yaml (8 test scenarios) |
 
-### For Development Teams (Onboarding a Project)
+**To add/modify rules:**
+1. Edit `.spectral.yaml` (errors) or `.spectral-warn.yaml` (warnings)
+2. Commit to `main`
+3. All spoke repos automatically use new rules on next run ✨
+
+### For Development Teams (Onboarding a Spoke)
 **5-Minute Checklist:**
-1. ☑️ Generate your API's OpenAPI spec from the base branch
-2. ☑️ Publish it to Azure Artifacts feed `api-baselines` (see [Onboarding](#onboarding-a-new-project))
-3. ☑️ Add `generate-spec.ps1` to your repo root (or specify custom path)
-4. ☑️ Add `api-governance.yaml` that references this Hub
-5. ☑️ Enable Branch Policy for Build Validation
+1. ☑️ Generate baseline OpenAPI spec from your main branch
+2. ☑️ Publish baseline to GitHub Release (e.g., tag `baselines-v1`)
+3. ☑️ Create `.github/workflows/api-governance.yaml` in your repo (see [example](#spoke-workflow-example))
+4. ☑️ Ensure your repo generates `swagger.yaml` (or similar) in CI
+5. ☑️ Set up PR branch protection to require the governance check
 
-**Result:** Your next PR will automatically get API governance checks! 🎉
+**Result:** Next PR gets automatic governance validation! 🎉
 
 ---
 
 ## 3. Hub & Spoke Architecture
 
-This model is the key to maintainability. It consists of two types of projects:
+### The "Hub" (This Repository: `API-Governance-POC`)
 
-### The "Hub" (Project: `API_Governance`)
+Central governance repository hosting:
 
-The "brain" of the entire system. This is a single Azure DevOps project containing one repository that holds all master logic:
-
-| File | Purpose |
-|------|---------|
-| **`templates/api-governance.yaml`** | Master pipeline template containing the entire 8-step process (build, diff, lint, post comments, etc.) |
-| **`.spectral.yaml`** | **Strict ruleset** - All rules set to `severity: error` and will *fail the build* |
-| **`.spectral-warn.yaml`** | **Advisory ruleset** - Same rules but downgraded to `severity: warn` |
-| **`scripts/generate_partial_spec.py`** | Python script that filters the API diff to isolate *only* new, non-legacy changes |
-| **`scripts/post_spectral_comments.ps1`** | PowerShell script that runs Spectral, posts concise findings to PR, and uploads detailed reports |
-| **`baselines/`** | Directory containing baseline JSON files (e.g., `memberdomain-legacy.json`) |
-| **`publish-baseline.yaml`** | Pipeline to publish baseline artifacts to Azure Artifacts feed |
+| Component | Purpose |
+|-----------|---------|
+| **`.github/workflows/api-governance.yaml`** | Reusable workflow (`workflow_call`) - the engine |
+| **`.spectral.yaml`** | Strict ruleset - all rules set to `severity: error` |
+| **`.spectral-warn.yaml`** | Advisory ruleset - same rules, `severity: warn` |
+| **`scripts/generate_partial_spec.py`** | Python filter: removes legacy ops, builds minimal spec |
+| **`baselines/`** | Example baseline files (YAML/JSON) |
+| **Releases** | Stores baseline artifacts (e.g., `javatest-legacy.yaml` under tag `baselines-v1`) |
 
 ### The "Spokes" (Your API Projects)
 
-All your individual API microservice projects (`MemberDomain`, `PaymentService`, etc.). Their `api-governance.yaml` is intentionally minimal and contains no complex logic:
+Individual microservice repos call the hub's reusable workflow:
 
-**Responsibilities:**
-1. 🔗 **Connect** to the Hub repo as a `resource`
-2. 📋 **Define** project-specific parameters (solution path, project name, baseline package, target branch)
-3. 📞 **Call** the master `api-governance.yaml` template from the Hub
-4. 📝 **Provide** a `generate-spec.ps1` script to generate OpenAPI specs
+**Spoke Responsibilities:**
+1. 🔗 **Call** the hub's reusable workflow via `uses:`
+2. 📋 **Pass** parameters: swagger path, baseline filename, release tag
+3. 📄 **Generate** OpenAPI spec in CI (e.g., via Swashbuckle, Spring Doc, etc.)
+4. 📊 **Receive** PR comments and Job Summary with governance results
+
+**Example Spoke Workflow:** See [Section 6: Onboarding](#spoke-workflow-example)
 
 ---
 
 ## 4. End-to-End Pull Request Flow
 
-What happens when a developer opens a Pull Request in any "Spoke" API project:
+When a developer opens a PR in a spoke repo:
 
 ### Step 1: Trigger 🎬
-- Developer opens a PR in `MemberDomain`
-- The `api-governance.yaml` is triggered by a Build Validation policy
+- Developer opens PR modifying an OpenAPI spec (e.g., `swagger.yaml`)
+- GitHub triggers the spoke's workflow (on: `pull_request`)
 
-### Step 2: Fetch Logic 🔗
-- Pipeline calls the `api-governance.yaml` template from the `API_Governance` Hub
-- All subsequent steps are defined *inside that template*
+### Step 2: Call Hub Workflow 🔗
+```yaml
+uses: KushalBang456/API-Governance-POC/.github/workflows/api-governance.yaml@main
+```
+Control passes to the hub's reusable workflow
 
 ### Step 3: Generate Specs 📄
-- Template calls the Spoke's `generate-spec.ps1` (using dynamic path `$(Build.Repository.Name)/generate-spec.ps1`) to build the **PR branch**
-  - Creates **`swagger_head.json`** (the "After" snapshot)
-- Intelligently checks out the **target branch** (handles both PR triggers and manual runs)
-  - For PRs: Uses `System.PullRequest.TargetBranch`
-  - For manual runs: Uses the `DefaultTargetBranch` parameter (configurable, defaults to `main`)
-  - Creates **`swagger_main.json`** (the "Before" snapshot)
+**Hub workflow performs:**
+1. **Checkout spoke repo** (with full history)
+2. **Extract HEAD version**: Copy `swagger.yaml` → `swagger_head.yaml`
+3. **Extract BASE version**: `git show origin/$TARGET_BRANCH:swagger.yaml` → `swagger_main.yaml`
+   - Dynamically detects target: `github.base_ref` (PR) or fallback to `main`
 
-### Step 4: Calculate the Delta 🔍
-1. **Diff Generation:** `openapi-diff` compares "Before" and "After" specs → creates **`diff.json`**
-2. **Baseline Download:** Template downloads the project's baseline from Azure Artifacts (using `BaselinePackageName` parameter)
-   - Artifact feed: `API_Governance/api-baselines`
-   - Renames downloaded file to **`swagger_baseline.json`**
-3. **Filter & Process Legacy:** `generate_partial_spec.py` runs with multiple steps:
-   - Loads baseline operations (the "ignore list")
-   - Filters `diff.json` to remove legacy changes
-   - Syncs response/requestBody schemas from `swagger_head.json` (preserves `$ref`)
-   - Builds minimal `components/schemas` with transitive closure
-4. **Output:** Creates **`partial_spec.json`** and **`partial_spec.yaml`** - temporary specs containing *only* changes to new, non-legacy endpoints with proper schema references
+### Step 4: Download Baseline 📦
+```bash
+gh release download baselines-v1 \
+  --repo KushalBang456/API-Governance-POC \
+  --pattern "javatest-legacy.yaml"
+```
+Downloads the baseline (legacy operation list) from GitHub Releases
 
-### Step 5: Two-Pass Linting 🔬
+### Step 5: Calculate Delta 🔍
+1. **Generate Diff:**
+   ```javascript
+   // Uses openapi-diff npm package
+   diff.diffSpecs({
+     sourceSpec: swagger_main.yaml,  // "Before"
+     destinationSpec: swagger_head.yaml  // "After"
+   }) → diff.json
+   ```
 
-#### **PASS 1: The "PR Blocker" (Errors) ⛔**
-- Calls `post_spectral_comments.ps1` with:
-  - `TaskID: "Strict"`
-  - `TaskTitle: "NB Governance 🛑 Strict Checks (New Code)"`
-- Lints the **SMALL** `partial_spec.json` (new code only)
-- Uses the **STRICT** `.spectral.yaml` ruleset (all rules are `severity: error`)
-- Posts **concise summary** to PR with error count and hint to view full report
-- Uploads **detailed table** to Pipeline Summary tab (`Extensions/Summary`)
-- If any errors exist → **Pipeline FAILS (`exit 1`)** → PR is **BLOCKED**
+2. **Filter Legacy Operations:**
+   ```bash
+   python governance-hub/scripts/generate_partial_spec.py javatest-legacy.yaml
+   ```
+   - Loads baseline operations (e.g., `GET@/pet`, `POST@/pet/findByStatus`)
+   - **Two-Phase Detection:**
+     1. **Diff Processing:** Parses `diff.json` from openapi-diff (structural changes)
+     2. **Deep Comparison:** Manual JSON comparison of ALL operations (catches cosmetic changes like descriptions/summaries that diff tools miss)
+   - **Decision Logic:**
+     - **Ignores** changes to legacy operations (in baseline)
+     - **Includes** changes to:
+       - New operations on modern paths
+       - New methods added to legacy paths (e.g., `PATCH /pet` where `GET /pet` is legacy)
+       - Modifications to modern operations
+   - **$ref Restoration:** Prevents schema inline expansion by restoring original `$ref` links
+   - **Component Pruning:** Rebuilds minimal `components/schemas` via transitive closure (only includes referenced schemas)
+   - **Output:** `partial_spec.json` + `partial_spec.yaml` (plus debug output with operation counts)
 
-#### **PASS 2: The "Legacy Report" (Warnings) ⚠️**
-- Calls `post_spectral_comments.ps1` *again* (runs even if Pass 1 fails via `condition: always()`)
-  - `TaskID: "Advisory"`
-  - `TaskTitle: "NB Governance ⚠️ Advisory Checks (Full Spec)"`
-- Lints the **ENTIRE** `swagger_head.json` (new + legacy code)
-- Uses the **ADVISORY** `.spectral-warn.yaml` ruleset (all rules are `severity: warn`)
-- Posts **concise warning summary** to PR
-- Uploads **detailed warning table** to Pipeline Summary tab
-- All findings posted as warnings → Script **PASSES (`exit 0`)**
+### Step 6: Two-Pass Linting 🔬
 
-### Step 6: Complete ✅
-Developer receives:
-- **In PR Comments:** Concise summary with counts (e.g., "🛑 Issues Found: 5 Errors, 12 Warnings")
-- **In Pipeline Summary Tab:** Full detailed tables with line numbers, paths, and rule codes
-- ✅/❌ Clear red/green signal on whether their *new code* is compliant (Errors - blocks PR)
-- ⚠️ Informational report on legacy technical debt
+#### **PASS 1: Strict Checks (Errors) ⛔**
+```bash
+spectral lint partial_spec.json \
+  --ruleset governance-hub/.spectral.yaml \
+  --output strict.json
+```
+- Lints **only new/modified code** (partial spec)
+- Uses **strict** ruleset (all rules are `severity: error`)
+- Violations **block the PR**
+
+#### **PASS 2: Advisory Checks (Warnings) ⚠️**
+```bash
+spectral lint swagger_head.yaml \
+  --ruleset governance-hub/.spectral-warn.yaml \
+  --output advisory.json
+```
+- Lints **entire spec** (including legacy)
+- Uses **advisory** ruleset (all rules are `severity: warn`)
+- Violations are **informational only** (non-blocking)
+
+### Step 7: Report & Comment 📊
+**GitHub Script action processes results:**
+
+1. **Generate Job Summary** (Actions tab):
+   - Beautiful markdown tables with severity icons
+   - Logical path display (e.g., `paths > /admin/health > get`)
+   - Line numbers shown for advisory (hidden for strict)
+   
+2. **Post PR Comments** (smart update logic):
+   - **Strict Check Comment:** "🛑 API Governance: Strict Checks"
+     - Shows error/warning counts
+     - Links to Job Summary
+     - **Updates** existing comment if found (title-based matching)
+     - **Creates** new comment only if issues exist
+   - **Advisory Check Comment:** "⚠️ API Governance: Advisory Checks"
+     - Same smart update logic
+
+3. **GitHub Annotations** (Files Changed tab):
+   - Red/yellow indicators on changed files
+   - Click to see inline issue details
+
+### Step 8: Pass/Fail Decision ✅❌
+- ✅ **Pass:** If strict checks = 0 errors (warnings don't block)
+- ❌ **Fail:** If strict checks > 0 errors (PR blocked)
+
+Developer sees:
+- **PR Comment:** Concise summary with counts
+- **Job Summary:** Detailed tables with rules, locations, messages
+- **Files Changed:** Inline annotations
+- **Clear Signal:** Whether new code meets standards
 
 ---
 
 ## 5. Component Deep-Dive
 
-### Component 1: The "Spoke" Pipeline (`api-governance.yaml`)
+### Component 1: The Reusable Workflow (`.github/workflows/api-governance.yaml`)
 
-**Role:** The "Client" or "Caller"
+**Location:** `KushalBang456/API-Governance-POC/.github/workflows/api-governance.yaml`
 
-**Example from MemberDomain:**
+**Trigger:** `workflow_call` (reusable workflow pattern)
+
+**Inputs:**
 ```yaml
-pr: none
-
-pool:
-  vmImage: ubuntu-latest
-
-resources:
-  repositories:
-    - repository: rules
-      type: git
-      project: API_Governance
-      name: API_Governance
-      ref: refs/heads/main
-
-stages: 
-  - stage: APIGovernance
-    displayName: 'API Governance Validation'
-    jobs:
-      - job: APIGovernance
-        displayName: 'API Governance'
-        steps:
-          - checkout: self
-            persistCredentials: true
-            clean: true
-            fetchDepth: 0
-
-          - checkout: rules
-
-          - task: NuGetAuthenticate@1
-            displayName: 'NuGet Authenticate'
-            inputs:
-              forceReinstallCredentialProvider: true
-
-          - template: templates/api-governance.yaml@rules
-            parameters:
-              SlnFile: 'NB.MemberDomain.API.sln'
-              ProjectFile: 'NB.MemberDomain.API/NB.MemberDomain.API.csproj'
-              ProjectAssemblyName: 'NB.MemberDomain.API'
-              TargetFramework: 'net8.0'
-              SwashbuckleVersion: '6.6.2'
-              SwaggerDocName: 'v1'
-              BaselinePackageName: 'memberdomain-legacy'
-              DefaultTargetBranch: 'master_common'
+inputs:
+  swagger_path:
+    required: true
+    type: string
+    description: "Path to swagger file in spoke repo (e.g. swagger.yaml)"
+  baseline_filename:
+    required: true
+    type: string
+    description: "Name of baseline file in Release (e.g. javatest-legacy.yaml)"
+  baseline_version:
+    required: false
+    type: string
+    default: 'baselines-v1'
+    description: "The Release Tag to download from"
 ```
 
-**Key Elements:**
-- **`resources:`** - Defines the connection to the `API_Governance` Hub project and repository (named `rules` in this example)
-- **`parameters:`** - The "contract" - tells the Hub template *how* to build this project
-  - `SlnFile` - Path to the solution file
-  - `ProjectFile` - Path to the project file
-  - `ProjectAssemblyName` - Assembly name
-  - `TargetFramework` - .NET target framework
-  - `SwashbuckleVersion` - Swashbuckle.AspNetCore.Cli version
-  - `SwaggerDocName` - Swagger document name (usually 'v1')
-  - **`BaselinePackageName`** - ⭐ Most important! Name of the baseline package in Azure Artifacts (e.g., `memberdomain-legacy`)
-  - **`DefaultTargetBranch`** - 🆕 Fallback branch for manual runs (e.g., `master_common`, `main`, `develop`)
-- **`template: ...@rules`** - The hand-off that transfers execution control to the Hub template
+**Permissions:**
+```yaml
+permissions:
+  contents: read        # Download releases
+  pull-requests: write  # Post PR comments
+```
 
-### Component 2: The "Hub" Template (`templates/api-governance.yaml`)
+**Workflow Steps:**
 
-**Role:** The "Engine" or "Master Logic"
-
-**Pipeline Structure:**
-
-| Step | Action | Details |
+| Step | Action | Purpose |
 |------|--------|---------|
-| 1 | Generate PR Branch Spec | Calls Spoke's `generate-spec.ps1` → creates `swagger_head.json` |
-| 2 | Checkout Target Branch | 🆕 Smart branch detection (PR target or default) → `swagger_main.json` |
-| 3 | Install Tools | Installs `openapi-diff` (npm) and prepares Python environment |
-| 4 | Run OpenAPI Diff | Compares `swagger_main.json` vs `swagger_head.json` → creates `diff.json` |
-| 5 | Download Baseline | Uses Azure CLI to download baseline package from `api-baselines` feed → renames to `swagger_baseline.json` |
-| 6 | Generate Partial Spec | Runs `generate_partial_spec.py`: filters diff, syncs schemas, builds components → creates `partial_spec.json` |
-| 7 | **PASS 1: Strict Lint** | 🆕 Lints `partial_spec.json` with `.spectral.yaml` → Posts concise PR comment + detailed summary → **Can FAIL build** |
-| 8 | **PASS 2: Advisory Lint** | 🆕 Lints `swagger_head.json` with `.spectral-warn.yaml` → Posts concise PR comment + detailed summary → Always passes |
-
-**Key Improvements:**
-- **Dynamic Paths:** Uses `$(Build.Repository.Name)` to automatically find the correct `generate-spec.ps1` location
-- **Smart Branch Handling:** Detects PR context and falls back to `DefaultTargetBranch` for manual runs
-- **Improved Commenting:** Generates two versions of each report (concise for PR, detailed for summary tab)
-
-### Component 3: The "Legacy Filter" (`scripts/generate_partial_spec.py`)
-
-**Role:** The "Brain" of the operation - executes the core "ignore legacy" strategy
-
-**Execution Flow:**
-```
-1. Load diff.json
-2. Load baseline (legacy operations)
-3. Build filtered spec (skip legacy)
-4. Sync responses/requestBodies (restore $refs)
-5. Ensure responses exist
-6. Build minimal components
-7. Save partial_spec.json + partial_spec.yaml
-```
-
-**Key Functions:**
-
-#### 1. `load_baseline_operations()`
-- Reads the downloaded `swagger_baseline.json` from pipeline workspace
-- Creates a Python `set` of all legacy operations in format: **`'METHOD@/path/string'`**
-  - Example: `'GET@/v1/members-info/{id}'`
-- This set becomes our "ignore list" for high-speed lookups
-- Returns the set of legacy operation keys
-
-#### 2. `build_new_spec()` - The "Sieve"
-- Loops through *every change* in `diff.json`
-- For each change:
-  1. Determines which operation it belongs to (e.g., `'GET@/v1/new-endpoint'`)
-  2. Looks up if operation is in baseline (legacy)
-  3. If legacy operation → **SKIP** (will only trigger warnings, not errors)
-  4. If new operation → **INCLUDE** (will be linted with strict rules)
-- Handles three change types:
-  - `add` - New endpoint/property (checks destination)
-  - `change` - Modified endpoint/property (checks destination)
-  - `remove` - Deleted endpoint/property (checks source)
-- Prints detailed logging for each decision
-
-#### 3. `sync_responses_from_base()` - Critical for Schema Integrity
-- **Critical improvement** to preserve original schema structures
-- Restores `$ref`-based response schemas from the base spec (`swagger_head.json`)
-- Prevents inline schema expansion that can confuse Spectral
-- Also syncs `requestBody` definitions with proper `$ref` references
-- Ensures the partial spec uses the same schema references as the full spec
-
-#### 4. `build_required_components()` - Minimal Schema Set
-- Builds a minimal `components/schemas` section
-- **Transitive closure** algorithm:
-  1. Finds all `$ref` references in the paths
-  2. For each reference, includes the schema definition
-  3. Recursively finds and includes any schemas referenced by those schemas
-  4. Continues until all dependencies are resolved
-- Only includes schemas that are actually used
-- Dramatically reduces partial spec size while maintaining validity
-- Example: If you reference `UserResponse`, it automatically includes `User`, `Address`, etc.
-
-#### 5. `ensure_operations_have_responses()`
-- Fallback to ensure all operations have at least a default response
-- Tries to copy responses from base specs first
-- Falls back to a default response if needed
-- Required for Spectral to run successfully
-
-#### 6. Helper Functions
-- `load_json()` - Safely loads JSON files with error handling
-- `save_yaml()` - Saves YAML (or JSON fallback if PyYAML unavailable)
-- `get_key_from_loc()` - Converts location strings to operation keys
-- `set_by_tokens()` / `remove_by_tokens()` - Token-based spec manipulation
-- `find_all_refs()` - Recursively finds all `$ref` values in spec
-
-**Output:** Saves the filtered spec as **`partial_spec.json`** and **`partial_spec.yaml`**
-
-**Recent Improvements:**
-- ✅ Better schema reference preservation (no more inline expansion)
-- ✅ Minimal components section (only includes what's needed)
-- ✅ Improved response/requestBody handling
-- ✅ More robust error handling and logging
-- ✅ Support for both YAML and JSON output
-
-### Component 4: The "Enforcer & Messenger" (`scripts/post_spectral_comments.ps1`)
-
-**Role:** The "Gatekeeper" - runs Spectral, posts feedback, and controls build pass/fail
-
-**Parameters:**
-- `$SpecFile` - Path to OpenAPI spec to lint
-- `$RulesetFile` - Path to Spectral ruleset to use
-- **`$TaskID`** - 🆕 Unique identifier for this task (e.g., "Strict", "Advisory") - used for file naming
-- **`$TaskTitle`** - 🆕 Display title for PR comments (e.g., "NB Governance 🛑 Strict Checks (New Code)")
-
-**Execution Flow:**
-
-```
-1. Check Spectral Installation
-   ↓ (Install if missing)
-2. Validate Spec File Exists
-   ↓ (Exit 0 if missing - not a failure)
-3. Run Spectral Lint
-   ↓ spectral lint $SpecFile --ruleset $RulesetFile --format json
-4. Parse Results
-   ↓ (Convert JSON output to PowerShell objects)
-5. Log Issues to Console
-   ↓ (Uses ADO logging commands for "Issues" tab)
-6. Generate TWO Versions of Report
-   ↓ Version 1: Concise (for PR comment)
-   ↓ Version 2: Detailed table (for Pipeline Summary)
-7. Post Concise Comment to PR
-   ↓ (Includes hint: "See Extensions/Summary tab for details")
-8. Upload Detailed Summary
-   ↓ (Creates spectral_summary_${TaskID}.md and uploads)
-9. The Verdict
-   ↓
-   if (errors found) { exit 0 } → SOFT MODE (Currently set to pass)
-   else { exit 0 } → PASSES BUILD ✅
-```
-
-**Severity Mapping:**
-- `0` = Error (blocks build in strict mode)
-- `1` = Warning (informational)
-- `2` = Info (informational)
-- `3` = Hint (informational)
+| 1 | Checkout Spoke Repo | Clone the calling repo with full history (`fetch-depth: 0`) |
+| 2 | Checkout Hub Repo | Clone governance hub to `governance-hub/` path |
+| 3 | Setup Node & Python | Install Node 18, Python 3.x |
+| 4 | Install Dependencies | `npm install openapi-diff`, `npm install -g @stoplight/spectral-cli`, `pip install PyYAML` |
+| 5 | Prepare Specs | Copy HEAD spec, extract BASE spec via `git show origin/$TARGET_BRANCH` |
+| 6 | Download Baseline | `gh release download` from hub repo releases |
+| 7 | Generate Diff | Run `openapi-diff` inline Node script → `diff.json` |
+| 8 | Generate Partial Spec | `python governance-hub/scripts/generate_partial_spec.py baseline.yaml` → `partial_spec.json` |
+| 9 | Strict Lint | `spectral lint partial_spec.json --ruleset .spectral.yaml` → `strict.json` |
+| 10 | Advisory Lint | `spectral lint swagger_head.yaml --ruleset .spectral-warn.yaml` → `advisory.json` |
+| 11 | Generate Report & PR Comments | GitHub Script: build tables, post/update PR comments, create annotations |
 
 **Key Features:**
-- ✅ **Dual Output System:** Concise PR comments + detailed pipeline summaries
-- ✅ Formatted Markdown comments with severity badges (🛑 ⚠️ ℹ️)
-- ✅ Supports both OAuth tokens and PAT authentication
-- ✅ Graceful handling of missing files or non-PR contexts
-- ✅ **No comment spam:** Each run creates a fresh, timestamped comment
-- ✅ **Unique file naming:** Uses `TaskID` to prevent file overwrites when running multiple passes
-- ✅ **Hint text:** Guides developers to the detailed report in Pipeline Summary tab
+- **Dynamic Target Detection:** Uses `github.base_ref` for PRs, falls back to `main` for manual runs
+- **Smart PR Comments:** Title-based matching to update existing comments vs. create new ones
+- **Dual Reporting:** Job Summary (Actions tab) + PR Comments + File annotations
+- **Debug Mode:** Optional steps print diff.json and partial_spec.json to workflow logs
 
-**Example PR Comment (Concise):**
+---
+
+### Component 1b: The Meta-Test Workflow (`.github/workflows/meta-test.yaml`)
+
+**Purpose:** Self-validating test suite that runs on every push/PR to verify governance logic
+
+**Trigger:** `push`, `pull_request`, `workflow_dispatch` (manual)
+
+**Test Strategy: 8 Robust Scenarios**
+
+The meta-test uses three fixture files to validate all governance edge cases:
+
+| Fixture | Purpose |
+|---------|--------|
+| `tests/baseline.yaml` | Legacy operation list (3 operations: `PUT@/pet`, `POST@/pet`, `GET@/pet/findByStatus`) |
+| `tests/main.yaml` | "Before" state (base branch) - includes legacy + some modern APIs |
+| `tests/pr_robust_mix.yaml` | "After" state (PR branch) - includes 8 specific test scenarios |
+
+**The 8 Test Scenarios:**
+
+```python
+# TC1: Legacy API Unchanged
+check('/pet', 'get', False, 1)
+# GET /pet exists in baseline, no changes → ABSENT from partial spec
+
+# TC2: Legacy API Modified  
+check('/pet/findByStatus', 'get', False, 2)
+# GET /pet/findByStatus in baseline, description modified → ABSENT (ignored)
+
+# TC3: Legacy Path, New Method
+check('/pet/findByStatus', 'patch', True, 3)
+# PATCH /pet/findByStatus is NEW method on legacy path → PRESENT
+
+# TC4: Modern API Unchanged
+check('/store/inventory', 'get', False, 4)
+# GET /store/inventory exists in main.yaml, no changes → ABSENT
+
+# TC5: Modern API, New Method
+check('/store/order', 'put', True, 5)
+# PUT /store/order is NEW method on modern path → PRESENT
+
+# TC6: Modern API Modified
+check('/store/order/{orderId}', 'delete', True, 6)
+# DELETE /store/order/{orderId} was modified → PRESENT
+
+# TC7: Completely New API
+check('/products', 'post', True, 7)
+# POST /products doesn't exist in main.yaml → PRESENT
+
+# TC8: Deep-Ref Test
+check('/inventory/check', 'get', True, 8)
+# GET /inventory/check uses complex nested schemas → PRESENT
+# Validates transitive closure (component pruning) works
+```
+
+**Workflow Steps:**
+
+1. **Setup Environment** - Checkout hub, setup Node/Python, install dependencies
+2. **Generate Test Diff** - Run openapi-diff on `main.yaml` vs `pr_robust_mix.yaml`
+3. **Run Generator Script** - Execute `generate_partial_spec.py` with `tests/baseline.yaml`
+4. **Python Assertions** - Built-in Python script validates ALL 8 test cases:
+   ```python
+   def check(path, method, should_exist, test_case):
+       exists = path in paths and method in paths[path]
+       if exists != should_exist:
+           print(f'❌ FAILED: Test Case {test_case} failed!')
+           sys.exit(1)  # Fail the workflow
+   ```
+5. **Spectral Validation** - Run Spectral on partial spec to ensure it's valid OpenAPI
+6. **Process Results** - Python script generates Job Summary with results table (no line numbers shown for temp spec)
+
+**What Gets Validated:**
+- ✅ Legacy operations are correctly ignored (TC1, TC2)
+- ✅ New methods on legacy paths are included (TC3)
+- ✅ Unchanged modern operations are absent (TC4)
+- ✅ New methods on modern paths are included (TC5)
+- ✅ Modified modern operations are included (TC6)
+- ✅ Completely new operations are included (TC7)
+- ✅ Deep schema references work correctly (TC8)
+- ✅ Partial spec is valid OpenAPI 3.0
+- ✅ Component pruning includes all required schemas
+
+**Success Criteria:**
+```
+=== LEGACY API CHECKS (in baseline.yaml) ===
+✅ TC1: GET    /pet                         ABSENT   (Expected: ABSENT)
+✅ TC2: GET    /pet/findByStatus            ABSENT   (Expected: ABSENT)
+✅ TC3: PATCH  /pet/findByStatus            PRESENT  (Expected: PRESENT)
+
+=== MODERN API CHECKS (added after baseline) ===
+✅ TC4: GET    /store/inventory             ABSENT   (Expected: ABSENT)
+✅ TC5: PUT    /store/order                 PRESENT  (Expected: PRESENT)
+✅ TC6: DELETE /store/order/{orderId}       PRESENT  (Expected: PRESENT)
+
+=== NEW API CHECKS (not in main.yaml) ===
+✅ TC7: POST   /products                    PRESENT  (Expected: PRESENT)
+✅ TC8: GET    /inventory/check             PRESENT  (Expected: PRESENT)
+
+✅ ALL TEST CASES PASSED!
+```
+
+**Why This Matters:**
+- Validates governance logic on every code change
+- Prevents regressions in filter logic
+- Documents expected behavior through executable tests
+- Builds confidence in the system
+- Serves as living documentation of edge cases
+
+---
+
+### Component 2: The Python Filter (`scripts/generate_partial_spec.py`)
+
+**Purpose:** Core logic to separate new/modern code from legacy code using **dual-phase detection**
+
+**How It Works:**
+
+1. **Load Baseline Operations:**
+   ```python
+   def load_baseline_operations(baseline_path: Path) -> set:
+       # Reads baseline file (YAML/JSON via smart loader)
+       # Extracts all HTTP methods: get, put, post, delete, patch, options, head, trace
+       # Returns: {'GET@/pet', 'POST@/pet', 'GET@/pet/findByStatus', ...}
+   ```
+   - Builds a `set` of legacy operation keys: `METHOD@/path`
+   - Example: `{'GET@/pet', 'POST@/pet/findByStatus', 'PUT@/pet'}`
+   - Prints each legacy operation for debugging
+
+2. **Dual-Phase Change Detection:**
+
+   **PHASE 1: Trust the Diff Tool (Fast)**
+   ```python
+   # Parses diff.json structure:
+   # - breakingDifferences
+   # - nonBreakingDifferences  
+   # - unclassifiedDifferences
+   # Extracts operation keys from sourceSpecEntityDetails/destinationSpecEntityDetails
+   ```
+   - Processes structural changes detected by openapi-diff
+   - Captures path modifications, new endpoints, schema changes
+   - Fast but may miss cosmetic changes
+
+   **PHASE 2: Manual Deep Comparison (Comprehensive)**
+   ```python
+   def detect_manual_changes(source_spec: dict, dest_spec: dict, affected_ops: set):
+       # Compares Source (main) vs Destination (head) operation-by-operation
+       # Converts to JSON strings for stable comparison
+       # Catches: description changes, summary changes, example changes, etc.
+       if json.dumps(op, sort_keys=True) != json.dumps(source_op, sort_keys=True):
+           affected_ops.add(op_key)  # Detected MODIFIED
+   ```
+   - Compares ALL operations in destination vs source
+   - Uses JSON string comparison (catches ANY difference)
+   - Detects description/summary changes that diff tools miss
+   - Identifies completely new operations not in source
+
+3. **Governance Decision Logic:**
+   ```python
+   for key in sorted(affected_ops):
+       if key in legacy_operations:
+           print(f"❌ IGNORE: {key} - Legacy operation (in baseline)")
+           # Skip - will only generate warnings in Pass 2
+       else:
+           print(f"✅ INCLUDE: {key} - Modern/new operation")
+           copy_operation_from_dest(new_spec, dest_spec, key)
+   ```
+
+4. **Build Partial Spec:**
+   - Starts with empty OpenAPI 3.0 skeleton
+   - Copies **only non-legacy operations** to `paths`
+   - **Critical:** Restores original `$ref` responses/requestBodies from HEAD spec
+     - Prevents inline schema expansion (keeps spec clean)
+     - Ensures schemas remain reusable
+     - Example: `$ref: '#/components/schemas/User'` instead of inline `{type: object, properties: {...}}`
+
+5. **Component Pruning (Transitive Closure):**
+   ```python
+   def build_required_components(new_spec: dict, base_spec: dict):
+       # Finds all $ref references in included paths
+       # Recursively resolves schema dependencies
+       # Example: UserResponse → User → Address → Country
+       # Builds minimal components/schemas with ONLY what's referenced
+   ```
+   - Scans all included operations for `$ref` strings
+   - Queue-based algorithm: follow refs → find nested refs → repeat
+   - Copies schemas from base spec only if referenced
+   - Handles circular references gracefully
+   - Prints final count: "Pruned components. Kept X total referenced components"
+
+6. **Output Files:**
+   - `partial_spec.json` - For Spectral strict linting (Pass 1)
+   - `partial_spec.yaml` - Human-readable format
+   - Console logs with statistics:
+     ```
+     ✅ SUCCESS!
+        Output: partial_spec.json
+        Paths: 5
+        Operations: 8
+     ```
+
+**Key Algorithm:**
+```python
+if operation_key in legacy_operations:
+    print("❌ IGNORE: {key} - Legacy operation")
+    # Skip - will only get warnings in Pass 2, not errors
+else:
+    print("✅ INCLUDE: {key} - Modern/new operation")
+    copy_operation_to_partial_spec()
+    # Will get strict error checking in Pass 1
+```
+
+**Special Cases Handled:**
+- **New method on legacy path:** `PATCH /pet` where `GET /pet` exists in baseline → **INCLUDED** (different method)
+- **Modified legacy operation:** `GET /pet` with description change → **IGNORED** (in baseline)
+- **New operation:** `POST /products` not in baseline → **INCLUDED**
+- **Deep-ref schemas:** Product → Category → Tag → Metadata all included automatically via transitive closure
+- **Unchanged operations:** Not in diff, not in deep compare → **ABSENT** from partial spec
+
+**Why This Matters:**
+- **Phase 1 (Diff)** catches structural API changes quickly
+- **Phase 2 (Deep Compare)** catches documentation/cosmetic changes that diff tools miss
+- **Combined approach** ensures comprehensive governance coverage
+- **$ref restoration** keeps specs maintainable and prevents Spectral false positives
+- **Transitive closure** ensures valid partial specs with all required schemas
+
+---
+### Component 3: GitHub Script Reporting (`.github/workflows/api-governance.yaml` step 11)
+
+**Purpose:** Process Spectral results and create beautiful reports + PR comments
+
+**Features:**
+
+#### 1. **Load Results:**
+```javascript
+const strictResults = loadResults('strict.json');
+const advisoryResults = loadResults('advisory.json');
+```
+
+#### 2. **Generate Job Summary Table:**
+- Markdown table with severity icons (🛑 ⚠️)
+- Logical path display: `paths > /admin/health > get`
+- Line numbers hidden for strict (temp spec), shown for advisory (real spec)
+- Automatically posted to Actions tab
+
+**Example:**
 ```markdown
-### NB Governance 🛑 Strict Checks (New Code)
-🛑 **Issues Found:** 5 Errors, 0 Warnings
+### 🛑 Strict Checks (New Code) (5 issues)
 
-> _(See the **Extensions/Summary** tab in the pipeline for the detailed line-by-line report)_
+| Severity | Rule | Location | Message |
+| :---: | :--- | :--- | :--- |
+| 🛑 | **path-versioning** | `paths > /members > get` | Path '/members' must start with /v<number>/ |
 ```
 
-**Example Pipeline Summary (Detailed):**
-```markdown
-### NB Governance 🛑 Strict Checks (New Code)
-🛑 **Issues Found:** 5 Errors, 0 Warnings
+#### 3. **Smart PR Comment Logic:**
+```javascript
+const STRICT_TITLE = "🛑 API Governance: Strict Checks";
+const ADVISORY_TITLE = "⚠️ API Governance: Advisory Checks";
 
-| Status | Rule | Location | Line | Details |
-| :---: | :--- | :--- | :---: | :--- |
-| 🛑 | **path-versioning** | `paths > /members > get` | 15 | Path '/members' must start with /v<number>/ |
-| 🛑 | **parameter-naming-camelCase** | `paths > /v1/users > get > parameters > 0` | 42 | Parameter name 'user_id' is not camelCase |
-...
+// Find existing comments by TITLE (body contains title)
+const existingComment = comments.find(c => c.body.includes(TITLE));
+
+if (existingComment) {
+  github.rest.issues.updateComment(...);  // UPDATE
+} else if (issuesFound > 0) {
+  github.rest.issues.createComment(...);  // CREATE
+} else {
+  // Stay silent on success if no previous comment
+}
 ```
 
-### Component 5: The "Spec Generator" (`generate-spec.ps1`)
+**Benefits:**
+- ✅ No comment spam (updates existing)
+- ✅ Shows green status when issues fixed
+- ✅ Silent on first success
+- ✅ Two distinct comments (strict vs advisory)
 
-**Role:** Project-specific script that builds and generates OpenAPI/Swagger specs
+#### 4. **GitHub Annotations:**
+```javascript
+if (isError) {
+  core.error(message, { title: ruleCode, file: 'swagger.yaml', startLine: line });
+} else {
+  core.warning(message, { title: ruleCode, file: 'swagger.yaml', startLine: line });
+}
+```
+- Shows inline on "Files Changed" tab
+- Red for errors, yellow for warnings
 
-**Location:** Root of each Spoke repository (e.g., `MemberDomain/generate-spec.ps1`)
+---
 
-**Key Responsibilities:**
-1. Restore NuGet packages (with smart config file detection)
-2. Build the .NET solution
-3. Install and use Swashbuckle.AspNetCore.Cli tool
-4. Generate OpenAPI spec from compiled assembly
-5. Validate output and provide clear error messages
+### Component 4: Spectral Rulesets
 
-**Parameters (passed from template):**
-```powershell
--OutputFile           # Where to save the generated spec
--SlnFile             # Path to solution file
--ProjectFile         # Path to project file
--ProjectAssemblyName # Assembly name
--TargetFramework     # Target framework (e.g., net8.0)
--SwashbuckleVersion  # Swashbuckle CLI version
--SwaggerDocName      # Swagger document name (e.g., v1)
+**`.spectral.yaml` (Strict - Blocks PRs):**
+```yaml
+rules:
+  path-camel-case:
+    severity: error  # ❌ BLOCKS
+  path-versioning:
+    severity: error
+  require-json-body:
+    severity: error
 ```
 
-**Recent Improvements:**
-- ✅ Smart NuGet config detection (checks solution dir, project dir, and root)
-- ✅ Handles both `nuget.config` and `Nuget.config` (case-sensitive filesystems)
-- ✅ Clear logging and error messages
-- ✅ Automatic tool installation with version control
+**`.spectral-warn.yaml` (Advisory - Informational):**
+```yaml
+rules:
+  path-camel-case:
+    severity: warn  # ⚠️ INFORMS
+  path-versioning:
+    severity: warn
+  require-json-body:
+    severity: warn
+```
+
+**Rule Examples:**
+- `path-camel-case`: Paths must be camelCase (e.g., `/userProfile` not `/user_profile`)
+- `parameter-naming-camelCase`: Params match `^[a-z][a-zA-Z0-9]*$`
+- `path-versioning`: Paths start with `/v[0-9]+/`
+- `response-envelope-has-code-and-data`: 2xx responses have top-level `code` and `data` properties
+- `no-content-response-no-body`: 204 responses must not have body
 
 ---
 
 ## 6. Onboarding a New Project
 
-To add a new API project to this governance system, follow these steps:
+### Step 1: Generate Baseline 📸
 
-### Step 1: Create Baseline 📸
-Generate a full OpenAPI spec of the *current* base branch (typically `master`, `main`, or `master_common`):
-```powershell
-# Run your project's spec generator
-./generate-spec.ps1 -OutputFile ./baselines/your-project-baseline.json `
-  -SlnFile "YourSolution.sln" `
-  -ProjectFile "YourProject/YourProject.csproj" `
-  -ProjectAssemblyName "YourProject" `
-  -TargetFramework "net8.0" `
-  -SwashbuckleVersion "6.6.2" `
-  -SwaggerDocName "v1"
+Create a baseline from your **current main/master branch**:
+
+```bash
+# Example for Java/Spring Boot
+./mvnw spring-boot:run -Dspring-boot.run.arguments="--springdoc.api-docs.enabled=true"
+curl http://localhost:8080/v3/api-docs.yaml > javatest-legacy.yaml
+
+# Example for .NET
+dotnet swagger tofile --output swagger-baseline.yaml bin/Debug/net8.0/MyAPI.dll v1
 ```
-This becomes your "legacy ignore list"
 
-> **Important:** The baseline should represent the current production state of your API. Any endpoints in this baseline will only generate warnings, not errors.
+This baseline represents your "legacy" operations that will only generate warnings.
 
-### Step 2: Publish Baseline 📦
-Publish the baseline to Azure Artifacts:
-- **Feed:** `API_Governance/api-baselines`
-- **Package Name:** Choose a unique name (e.g., `memberdomain-legacy`, `payment-service-baseline`)
-- **Version:** `1.0.0`
+---
 
-You can use the `publish-baseline.yaml` pipeline as a template:
+### Step 2: Publish Baseline to GitHub Release 📦
+
+Create a release in the **Hub repository** (API-Governance-POC):
+
+```bash
+# Tag and create release
+git tag baselines-v1
+git push origin baselines-v1
+
+# Upload baseline file via GitHub UI or CLI
+gh release create baselines-v1 javatest-legacy.yaml \
+  --repo KushalBang456/API-Governance-POC \
+  --title "Baselines v1" \
+  --notes "Initial baseline files for legacy operations"
+```
+
+**Tip:** You can add multiple baseline files to the same release (one per project).
+
+---
+
+### Step 3: Create Spoke Workflow 🔧
+
+<a name="spoke-workflow-example"></a>
+
+In your project repo, create `.github/workflows/api-governance.yaml`:
+
 ```yaml
-trigger: none
-pool:
-  vmImage: 'windows-latest'
+name: API Governance
 
-steps:
-- task: UniversalPackages@0
-  displayName: 'Publish Your Project Baseline'
-  inputs:
-    command: publish
-    publishDirectory: '$(Build.SourcesDirectory)/baselines'
-    vstsFeedPublish: 'API_Governance/api-baselines'
-    vstsFeedPackagePublish: 'your-project-baseline'  # Change this
-    versionOption: custom
-    versionPublish: '1.0.0'
-    packagePublishDescription: 'Your Project legacy baseline'
+on:
+  pull_request:
+    paths:
+      - 'swagger.yaml'  # Or wherever your OpenAPI spec lives
+      - 'src/**'        # Trigger on source changes too
+
+jobs:
+  validate-api:
+    name: \ud83d\uded1 API Governance Check
+    uses: KushalBang456/API-Governance-POC/.github/workflows/api-governance.yaml@main
+    with:
+      swagger_path: 'swagger.yaml'           # Path in YOUR repo
+      baseline_filename: 'javatest-legacy.yaml'  # Filename in Release
+      baseline_version: 'baselines-v1'       # Release tag
+    permissions:
+      contents: read
+      pull-requests: write
 ```
 
-### Step 3: Add Spec Generator Script 📝
-Add a `generate-spec.ps1` script to your repository root (or custom location) that:
-- Builds your .NET project
-- Generates the OpenAPI/Swagger specification
-- Outputs to the specified file path
+**Parameters:**
+- `swagger_path`: Path to OpenAPI spec in your repo (e.g., `api/swagger.yaml`, `openapi.json`)
+- `baseline_filename`: Exact filename from the GitHub Release
+- `baseline_version`: Release tag (default: `baselines-v1`)
 
-**Use the provided example from MemberDomain as a template** - it includes:
-- Smart NuGet config detection
-- Proper error handling
-- Tool installation logic
-- Clear logging
+---
 
-**Parameters it must accept:**
-- `OutputFile` - Where to save the generated spec
-- `SlnFile` - Path to solution file
-- `ProjectFile` - Path to project file
-- `ProjectAssemblyName` - Assembly name
-- `TargetFramework` - Target framework
-- `SwashbuckleVersion` - Swashbuckle version
-- `SwaggerDocName` - Swagger document name
+### Step 4: Generate OpenAPI Spec in CI \ud83d\udce1
 
-### Step 4: Add Pipeline Configuration 🔧
-Create `api-governance.yaml` in your repository:
+Ensure your build process generates the OpenAPI spec **before** the governance workflow runs.
+
+**Important:** The workflow expects the spec file to already exist at `swagger_path` when it starts.
+
+**Option A: Spec Already Committed** - If `swagger.yaml` is version-controlled, no extra steps needed.
+
+**Option B: Generate in CI** - Create the spec before calling the governance workflow.
+
+**Example for Spring Boot:**
 ```yaml
-pr: none  # Only run on PR via Build Validation policy
-
-pool:
-  vmImage: ubuntu-latest
-
-resources:
-  repositories:
-    - repository: rules
-      type: git
-      project: API_Governance
-      name: API_Governance
-      ref: refs/heads/main
-
-stages: 
-  - stage: APIGovernance
-    displayName: 'API Governance Validation'
-    jobs:
-      - job: APIGovernance
-        displayName: 'API Governance'
-        steps:
-          - checkout: self
-            persistCredentials: true
-            clean: true
-            fetchDepth: 0
-
-          - checkout: rules
-
-          - task: NuGetAuthenticate@1
-            displayName: 'NuGet Authenticate'
-            inputs:
-              forceReinstallCredentialProvider: true
-
-          - template: templates/api-governance.yaml@rules
-            parameters:
-              SlnFile: 'YourSolution.sln'
-              ProjectFile: 'YourProject/YourProject.csproj'
-              ProjectAssemblyName: 'YourProject'
-              TargetFramework: 'net8.0'
-              SwashbuckleVersion: '6.6.2'
-              SwaggerDocName: 'v1'
-              BaselinePackageName: 'your-project-baseline'
-              DefaultTargetBranch: 'main'  # or 'master', 'master_common', etc.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+      
+      # Build and generate spec
+      - run: ./mvnw clean package spring-boot:run &
+      - run: sleep 10  # Wait for startup
+      - run: curl http://localhost:8080/v3/api-docs.yaml > swagger.yaml
 ```
 
-> **Note:** Adjust `DefaultTargetBranch` to match your repository's main branch name.
+**Example for .NET:**
+```yaml
+      - run: dotnet build
+      - run: dotnet swagger tofile --output swagger.yaml bin/Debug/net8.0/MyAPI.dll v1
+      # Spec now exists at swagger.yaml, ready for governance workflow
+```
 
-### Step 5: Grant Pipeline Permissions 🔐
-Ensure your pipeline has access to:
-- ✅ The `API_Governance` repository (for templates/scripts)
-- ✅ The `api-baselines` artifact feed (for downloading baselines)
-- ✅ Pull Request comments (System.AccessToken permissions)
+**Note:** You don't need to commit the generated spec back to the repo. The workflow reads it from the workspace filesystem.
 
-**To enable PR comment permissions:**
-1. Go to **Project Settings** → **Repositories** → **Your Repository**
-2. Navigate to **Security** tab
-3. Find your build service account: `[Project Name] Build Service ([Org Name])`
-4. Grant **"Contribute to pull requests"** permission
+---
 
-### Step 6: Activate Build Validation ✅
-Configure a **Build Validation** policy on your main branch:
-1. Go to **Branch Policies** for your main branch (e.g., `main`, `master`, `master_common`)
-2. Add **Build Validation**
-3. Select your new `api-governance.yaml` pipeline
-4. Set **Trigger:** Automatic
-5. Set **Policy requirement:** Required
-6. **Display name:** "API Governance Check"
-7. **Path filter (optional):** Limit to API-related paths if needed
+### Step 5: Enable Branch Protection \ud83d\udd12
 
-> **Pro Tip:** You can also enable this for other long-lived branches (e.g., `develop`, `release/*`) to catch issues earlier in your workflow.
+Configure branch protection on your main branch:
+
+1. Go to **Settings** → **Branches** → **Branch protection rules**
+2. Add rule for `main` (or your default branch)
+3. **Require status checks to pass:**
+   - Check: "\ud83d\uded1 API Governance Check"
+4. **Save**
+
+Now PRs cannot merge until governance checks pass!
+
+---
+
+### Step 6: Test It! \ud83e\uddea
+
+1. Create a branch with an API change
+2. Open a PR
+3. Watch the governance workflow run
+4. See PR comments, Job Summary, and annotations
+
+**Expected Behavior:**
+- \u2705 **Pass:** If your new code meets standards
+- \u274c **Fail:** If new code violates rules (legacy violations only warn)
+- \ud83d\udcac **PR Comments:** Two comments (strict + advisory)
+- \ud83d\udcc4 **Job Summary:** Detailed tables in Actions tab
+- \ud83d\udccd **Annotations:** Inline on Files Changed tab
 
 ---
 
@@ -588,306 +749,203 @@ Configure a **Build Validation** policy on your main branch:
 ### For the Governance Team 🎯
 
 **Adding/Updating Rules:**
-When a new API rule is required for the *entire organization*:
-1. Edit **only** the `.spectral.yaml` file (for errors) or `.spectral-warn.yaml` file (for warnings) in the `API_Governance` Hub
-2. Commit and push
-3. ✨ **The change is instantly applied** to every project's pipeline on their very next PR
+1. Edit `.spectral.yaml` (strict) or `.spectral-warn.yaml` (advisory) in hub repo
+2. Commit to `main`
+3. ✨ **Instantly applied** to all spoke repos on next workflow run
 
 **No need to:**
-- ❌ Update 20+ individual project pipelines
-- ❌ Coordinate deployments across teams
-- ❌ Train teams on new pipeline configurations
+- ❌ Update dozens of spoke repos
+- ❌ Coordinate deployments
+- ❌ Train teams on changes
 
 **Updating Baselines:**
-When legacy code is fixed and meets current standards, update the baseline:
-1. Generate a new OpenAPI spec from the updated base branch
-2. Republish to Azure Artifacts with the same package name and version `1.0.0`
-3. The next PR will use the updated baseline automatically
-
-**Example Rules Currently Enforced:**
-- ✅ Path segments must be camelCase
-- ✅ Parameters must use camelCase
-- ✅ Paths must include version (e.g., `/v1/`)
-- ✅ Tags should be PascalCase (warning only)
-- ✅ Responses must include `application/json`
-- ✅ 2xx responses must define top-level `code` and `data` properties
-- ✅ CommonResponse schemas must have `code` and `data` properties
-- ✅ 204 responses must not have a body
+1. Generate new spec from updated base branch
+2. Upload to existing GitHub Release (or create new version tag)
+3. Next PR uses updated baseline automatically
 
 ### For Developers 👨‍💻👩‍💻
 
-**Clear, Actionable Feedback:**
-- ⛔ **Errors (Red)** - Issues in *new code* that **BLOCK** the PR
-  - Must be fixed before merge
-  - Only applies to new/modified endpoints
-  - Shows in PR as concise summary
-- ⚠️ **Warnings (Yellow)** - Issues in *legacy code* that are **INFORMATIONAL**
-  - Build passes regardless
-  - Helps identify technical debt
-  - Can be fixed incrementally
-- 📊 **Detailed Reports** - Full line-by-line breakdown in Pipeline Summary tab
+**Clear Feedback:**
+- ⛔ **Errors:** Issues in *new code* that **BLOCK** merge
+- ⚠️ **Warnings:** Issues in *legacy code* (informational only)
+- 📊 **Three report locations:**
+  1. PR comments (concise)
+  2. Job Summary (Actions tab - detailed tables)
+  3. Files Changed (inline annotations)
 
 **Benefits:**
-- ✅ Know exactly what needs to be fixed (no guessing)
-- ✅ Not blocked by years of legacy code
-- ✅ Automatic PR comments with concise summaries
-- ✅ Detailed reports available in Pipeline Summary tab
-- ✅ Consistent API standards across the organization
-- ✅ Clear guidance with rule codes and messages
-- ✅ No comment spam - fresh report on each run
+- ✅ Know exactly what to fix
+- ✅ Not blocked by legacy tech debt
+- ✅ Consistent standards org-wide
+- ✅ No comment spam (updates existing)
 
 ---
 
 ## 8. Current API Standards
 
-The following rules are currently enforced (see `.spectral.yaml` and `.spectral-warn.yaml`):
-
-| Rule | Description | Pass 1 (New Code) | Pass 2 (All Code) |
-|------|-------------|-------------------|-------------------|
+| Rule | Description | Strict (New Code) | Advisory (All Code) |
+|------|-------------|-------------------|---------------------|
 | `path-camel-case` | Path segments must be camelCase | ❌ Error | ⚠️ Warning |
-| `parameter-naming-camelCase` | Parameters must use camelCase | ❌ Error | ⚠️ Warning |
-| `path-versioning` | Paths must start with `/v<number>/` | ❌ Error | ⚠️ Warning |
+| `parameter-naming-camelCase` | Parameters match `^[a-z][a-zA-Z0-9]*$` | ❌ Error | ⚠️ Warning |
+| `path-versioning` | Paths start with `/v[0-9]+/` | ❌ Error | ⚠️ Warning |
 | `tag-pascal-case` | Tags should be PascalCase | ⚠️ Warning | ⚠️ Warning |
-| `require-json-body` | Responses must include `application/json` | ❌ Error | ⚠️ Warning |
-| `response-envelope-has-code-and-data` | 2xx responses must have `code` and `data` properties | ❌ Error | ⚠️ Warning |
-| `common-response-has-code` | `CommonResponse` must have `code` property | ❌ Error | ⚠️ Warning |
-| `common-response-has-data` | `CommonResponse` must have `data` property | ❌ Error | ⚠️ Warning |
+| `require-json-body` | Responses include `application/json` | ❌ Error | ⚠️ Warning |
+| `response-envelope-has-code-and-data` | 2xx responses have `code` and `data` | ❌ Error | ⚠️ Warning |
+| `common-response-has-code` | CommonResponse has `code` property | ❌ Error | ⚠️ Warning |
+| `common-response-has-data` | CommonResponse has `data` property | ❌ Error | ⚠️ Warning |
 | `no-content-response-no-body` | 204 responses must not have body | ❌ Error | ⚠️ Warning |
 
 ---
 
 ## 9. Troubleshooting
 
-### Issue: Baseline not found
-**Error Message:** `Could not find a downloaded baseline JSON file`
-
-**Solution:** 
-- Verify the package exists in Azure Artifacts feed `api-baselines` with version `1.0.0`
-- Check that `BaselinePackageName` parameter in your pipeline matches the published package name exactly
-- Ensure the pipeline has permissions to access the artifact feed
-- Run `az artifacts universal list --feed api-baselines` to verify package exists
-
-### Issue: Pipeline can't access Hub repository
-**Error Message:** Repository resource access errors
-
-**Solution:** 
-- Grant pipeline permission to access the `API_Governance` repository
-- Go to Project Settings → Repositories → API_Governance → Security
-- Add the build service account with Read permissions
-
-### Issue: PR comments not being posted
-**Error Message:** `Failed to post comment` or comments not appearing
-
-**Solution:** 
-- Ensure `System.AccessToken` has proper permissions
-- Go to Project Settings → Repositories → [Your Repo] → Security
-- Find: `[Project Name] Build Service ([Org Name])`
-- Grant: **"Contribute to pull requests"** permission (set to Allow)
-- Verify the pipeline is triggered in PR context (not manual run)
-
-### Issue: False positives on legacy code
-**Error:** New code is being flagged when it shouldn't be
-
-**Solution:** 
-- Regenerate and republish your baseline to include the current state of your API
-- Ensure you generated the baseline from the correct base branch
-- Check that the baseline file contains the operations you expect
-
-### Issue: New endpoint flagged as legacy
-**Error:** New endpoints are not being linted with strict rules
-
-**Solution:** 
-- Check that your baseline doesn't include the new endpoint
-- You may need to regenerate the baseline from a clean base branch
-- Verify the operation key format matches: `METHOD@/path` (e.g., `GET@/v1/users`)
-
-### Issue: Spectral not finding rules
-**Error Message:** `No results` or rules not being applied
+### GitHub Release not found
+**Error:** `Release not found` or baseline download fails
 
 **Solution:**
-- Verify `.spectral.yaml` and `.spectral-warn.yaml` files exist in the Hub repository
-- Check that the `RulesetFile` parameter path is correct
-- Ensure Spectral CLI is properly installed (script auto-installs if missing)
+```bash
+# Verify release exists
+gh release list --repo KushalBang456/API-Governance-POC
 
-### Issue: swagger_head.json or swagger_main.json not found
-**Error Message:** `swagger_head.json not found!` or `swagger_main.json not found!`
+# Verify file in release
+gh release view baselines-v1 --repo KushalBang456/API-Governance-POC
 
-**Solution:**
-- Verify the `generate-spec.ps1` script exists in your Spoke repository root
-- Check that all required parameters are being passed correctly
-- Ensure the script has proper error handling and actually generates output
-- Check the script is executable and not failing silently
-- Review NuGet config file location (should be in solution or project directory)
+# Check permissions
+# Ensure GITHUB_TOKEN has read access to releases
+```
 
-### Issue: Branch checkout fails
-**Error Message:** `pathspec 'master' did not match any file(s)` or similar
+### Workflow permission denied
+**Error:** `Resource not accessible by integration`
 
 **Solution:**
-- Set `DefaultTargetBranch` parameter to match your repository's main branch
-- Common values: `main`, `master`, `master_common`, `develop`
-- The template now intelligently handles both PR and manual runs
-- For PRs: Uses `System.PullRequest.TargetBranch`
-- For manual runs: Uses `DefaultTargetBranch` parameter
+- Add `permissions:` block to spoke workflow:
+  ```yaml
+  permissions:
+    contents: read
+    pull-requests: write
+  ```
 
-### Issue: openapi-diff produces empty output
-**Error Message:** `No changes found` but you know there are changes
-
-**Solution:**
-- Verify both `swagger_head.json` and `swagger_main.json` are valid OpenAPI specs
-- Check that the specs are in OpenAPI 3.0 format (not Swagger 2.0)
-- Ensure the diff tool is capturing structural changes, not just formatting differences
-
-### Issue: Spectral reports "Could not find schema definition"
-**Error Message:** Schema references are broken or missing
+### PR comments not posting
+**Symptom:** Workflow runs but no comments appear
 
 **Solution:**
-- This should be automatically fixed by the `build_required_components()` function
-- Verify `swagger_head.json` contains all the schemas your endpoints reference
-- Check that the Python script completed successfully (look for "Step 4: Building minimal components")
-- If the issue persists, the base spec may have broken `$ref` references
+- Check PR context: `if (!context.issue.number)` fails on non-PR runs
+- Verify `pull-requests: write` permission exists
+- Check GitHub Script logs for API errors
 
-### Issue: Partial spec is too large or includes unnecessary schemas
-**Symptom:** The partial spec includes schemas not directly used by new endpoints
+### Baseline operations not being ignored
+**Error:** Legacy endpoints triggering strict errors
 
 **Solution:**
-- The script uses transitive closure - if schema A references schema B, both are included
-- This is expected and necessary for Spectral validation
-- If truly unnecessary schemas appear, check for stray `$ref` references in your new endpoints
-- The script logs which schemas are kept: look for "Pruned components. Kept X referenced schemas"
+- Verify baseline file format (YAML/JSON valid)
+- Check operation keys match: `METHOD@/path` (case-sensitive)
+- Review Python script logs: "IGNORE: GET@/pet"
+- Ensure `baseline_filename` parameter matches exactly
 
-### Issue: Comments are too verbose / cluttering PR
-**Good News:** This has been fixed in the latest version!
+### openapi-diff produces no changes
+**Symptom:** `diff.json` is empty but changes exist
 
-**Current Behavior:**
-- PR comments now show only concise summaries with counts
-- Full detailed tables appear in the Pipeline Summary tab (Extensions/Summary)
-- Developers are guided to the detailed report via hint text
-- No more cluttered PR comment sections
+**Solution:**
+- Verify specs are valid OpenAPI 3.0
+- Check `swagger_main.yaml` and `swagger_head.yaml` both exist
+- Ensure changes are structural (not just whitespace/comments)
+- Add new param/response to trigger diff reliably
 
-### Issue: Multiple tasks overwriting summary files
-**Good News:** This has been fixed with TaskID parameter!
+### Spectral errors on valid spec
+**Error:** Schema validation fails on partial spec
 
-**Current Behavior:**
-- Each task (Strict, Advisory) creates unique files: `spectral_Strict_results.json`, `spectral_Advisory_results.json`
-- Summary files are also unique: `spectral_summary_Strict.md`, `spectral_summary_Advisory.md`
-- Both reports appear in the Pipeline Summary tab without overwriting each other
+**Solution:**
+- Check `build_required_components()` ran successfully
+- Verify all `$ref` schemas copied from HEAD spec
+- Look for "Pruned components. Kept X schemas" in logs
+- Ensure original spec has valid `components/schemas` section
+
+### Branch protection not triggered
+**Symptom:** Governance workflow doesn't block merge
+
+**Solution:**
+1. Settings → Branches → Branch protection rules
+2. Add rule for base branch
+3. **Require status checks:**
+   - Select "🛑 API Governance Check" (exact job name)
+4. **Save changes**
 
 ---
 
-## 10. Architecture Diagram
+## 10. Repository Structure
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                    AZURE DEVOPS ORGANIZATION                   │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │          PROJECT: API_Governance (The Hub)               │ │
-│  │  ┌────────────────────────────────────────────────────┐  │ │
-│  │  │  REPOSITORY: API_Governance                        │  │ │
-│  │  │  ┌──────────────────────────────────────────────┐  │  │ │
-│  │  │  │  📄 .spectral.yaml (Strict Rules)            │  │  │ │
-│  │  │  │  📄 .spectral-warn.yaml (Advisory Rules)     │  │  │ │
-│  │  │  │  📄 templates/api-governance.yaml            │  │  │ │
-│  │  │  │     (Master Pipeline Template)               │  │  │ │
-│  │  │  │  📄 scripts/generate_partial_spec.py         │  │  │ │
-│  │  │  │  📄 scripts/post_spectral_comments.ps1       │  │  │ │
-│  │  │  └──────────────────────────────────────────────┘  │  │ │
-│  │  └────────────────────────────────────────────────────┘  │ │
-│  │  ┌────────────────────────────────────────────────────┐  │ │
-│  │  │  ARTIFACT FEED: api-baselines                      │  │ │
-│  │  │  - memberdomain-legacy@1.0.0                       │  │ │
-│  │  │  - payment-service-baseline@1.0.0                  │  │ │
-│  │  │  - ... (other baselines)                           │  │ │
-│  │  └────────────────────────────────────────────────────┘  │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │       PROJECT: MemberDomain (Spoke 1)                    │ │
-│  │  ┌────────────────────────────────────────────────────┐  │ │
-│  │  │  REPOSITORY: MemberDomain                          │  │ │
-│  │  │  ┌──────────────────────────────────────────────┐  │  │ │
-│  │  │  │  📄 api-governance.yaml                      │  │  │ │
-│  │  │  │     - Calls Hub template                     │  │  │ │
-│  │  │  │     - Defines parameters                     │  │  │ │
-│  │  │  │  📄 generate-spec.ps1                        │  │  │ │
-│  │  │  │     - Generates OpenAPI spec                 │  │  │ │
-│  │  │  │  📁 Source Code (.NET API)                   │  │  │ │
-│  │  │  └──────────────────────────────────────────────┘  │  │ │
-│  │  └────────────────────────────────────────────────────┘  │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │       PROJECT: PaymentService (Spoke 2)                  │ │
-│  │  ┌────────────────────────────────────────────────────┐  │ │
-│  │  │  REPOSITORY: PaymentService                        │  │ │
-│  │  │  ┌──────────────────────────────────────────────┐  │  │ │
-│  │  │  │  📄 api-governance.yaml                      │  │  │ │
-│  │  │  │  📄 generate-spec.ps1                        │  │  │ │
-│  │  │  │  📁 Source Code (.NET API)                   │  │  │ │
-│  │  │  └──────────────────────────────────────────────┘  │  │ │
-│  │  └────────────────────────────────────────────────────┘  │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                                                                │
-│  ... (More Spoke Projects)                                     │
-└────────────────────────────────────────────────────────────────┘
+API-Governance-POC/  (Hub Repo)
+├── .github/
+│   └── workflows/
+│       ├── api-governance.yaml       # Reusable workflow (the engine)
+│       └── meta-test.yaml            # Self-test workflow
+├── scripts/
+│   ├── generate_partial_spec.py      # Python filter (core logic)
+│   └── post_spectral_comments.ps1    # Legacy PowerShell script (reference)
+├── tests/                             # Test fixtures
+│   ├── baseline.yaml                  # Example legacy operations list
+│   ├── main.yaml                      # Source spec (base)
+│   └── pr_robust_mix.yaml            # PR spec (head) - 8 test scenarios
+├── baselines/                         # Example baselines
+│   ├── javatest-legacy.yaml
+│   └── memberdomain-legacy.json
+├── available-baselines/               # More examples
+│   └── backend-baseline.json
+├── .spectral.yaml                     # Strict rules (severity: error)
+├── .spectral-warn.yaml                # Advisory rules (severity: warn)
+├── publish-baseline.yaml              # **LEGACY:** Azure DevOps pipeline example (reference only)
+└── Readme.md                          # This file
 
-PULL REQUEST EXECUTION FLOW:
-┌─────────────────────────────────────┐
-│ Developer Opens PR in MemberDomain  │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ Build Validation Policy Triggers    │
-│ Spoke: api-governance.yaml          │
-│  - Calls Hub template               │
-│  - Provides parameters              │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ Hub Template Executes (8 Steps):    │
-│  1. Generate swagger_head.json      │
-│  2. Smart checkout target branch    │
-│     (PR target or DefaultTargetBranch)
-│  3. Generate swagger_main.json      │
-│  4. Install diff tools              │
-│  5. Run openapi-diff                │
-│  6. Download baseline from feed     │
-│  7. Generate partial_spec.json      │
-│  8a. PASS 1: Lint partial_spec.json │
-│      - Lint with .spectral.yaml     │
-│      - Post concise PR comment      │
-│      - Upload detailed summary      │
-│  8b. PASS 2: Lint swagger_head.json │
-│      - Lint with .spectral-warn.yaml│
-│      - Post concise PR comment      │
-│      - Upload detailed summary      │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ Developer Receives:                 │
-│  ✅ Concise PR comments (summaries) │
-│  📊 Detailed reports (Summary tab)  │
-│  🛑 Build pass/fail status          │
-└─────────────────────────────────────┘
+GitHub Releases (baselines-v1):
+├── javatest-legacy.yaml
+├── memberdomain-legacy.json
+└── ... (other baseline files)
+```
+
+**Spoke Repo Structure:**
+```
+Your-API-Project/  (Spoke Repo)
+├── .github/
+│   └── workflows/
+│       └── api-governance.yaml       # Calls hub workflow
+├── src/                               # Your API source code
+├── swagger.yaml                       # Generated OpenAPI spec
+└── ... (other project files)
 ```
 
 ---
 
-## 11. Key Concepts Explained
+## Key Concepts
 
-### What is a "Baseline"?
-A baseline is a snapshot of your API's OpenAPI specification at a specific point in time (typically when you onboard to the governance system). It represents your "legacy" code. Any endpoints present in the baseline will:
-- ✅ Still be linted, but only produce **warnings**
-- ✅ Not block Pull Requests
-- ✅ Allow you to adopt API standards without fixing years of technical debt first
+### Baseline
+Snapshot of API operations at a point in time (legacy list). Operations in baseline only generate warnings, never errors.
 
-### What is a "Partial Spec"?
-The partial spec (`partial_spec.json`) is a dynamically generated, temporary OpenAPI specification that contains **only** the changes to non-legacy endpoints. It's created by:
-1. Taking the diff between PR branch and base branch
-2. Filtering out any changes to operations listed in the baseline
+**Format:** OpenAPI 3.0 spec (YAML/JSON) with `paths` section.
+
+### Partial Spec
+Dynamically generated OpenAPI containing **only non-legacy operations**. Created by:
+1. Diff between base and head
+2. Filter out legacy operations
+3. Rebuild minimal components
+
+**Purpose:** Lint new/modified code without legacy noise.
+
+### Reusable Workflow
+GitHub Actions feature (`workflow_call`) allowing spokes to call hub logic:
+```yaml
+uses: KushalBang456/API-Governance-POC/.github/workflows/api-governance.yaml@main
+```
+
+### Two-Pass Linting
+1. **Strict:** Partial spec + `.spectral.yaml` → **errors block PR**
+2. **Advisory:** Full spec + `.spectral-warn.yaml` → **warnings only**
+
+---
+
+*Last Updated: December 2024*
+*Platform: GitHub Actions*
+*Hub Repository: [`KushalBang456/API-Governance-POC`](https://github.com/KushalBang456/API-Governance-POC)*
 3. Building a new, minimal spec with just the new/modified endpoints
 4. **Restoring `$ref` references** from the original spec (prevents schema expansion)
 5. **Building a minimal components section** with only referenced schemas
@@ -976,7 +1034,7 @@ parameters:
 ### Q: How do I update my baseline after fixing legacy code?
 **A:** 
 1. Generate a new spec from your base branch
-2. Republish to Azure Artifacts with the same package name and version `1.0.0`
+2. Re-upload to GitHub Release with the same asset name (tag: `baselines-v1`)
 3. The next PR will automatically use the updated baseline
 
 ### Q: Why do I see two sets of comments on my PR?
@@ -1060,8 +1118,8 @@ MemberDomain/                      # Example Spoke Repository
 ## Future Enhancements (Roadmap)
 
 ### Planned Features
-- 🔄 **SARIF Output Support** - Generate SARIF files for better Azure DevOps integration
-  - Beautiful interactive dashboards in Azure DevOps
+- 🔄 **SARIF Output Support** - Generate SARIF files for better GitHub integration
+  - Code scanning integration with GitHub Security
   - Direct links to problematic code lines
   - Rich metadata and fix suggestions
 - 📊 **Baseline Comparison Reports** - Show progress over time
