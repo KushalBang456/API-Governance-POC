@@ -469,9 +469,9 @@ jobs:
           echo "Running Spectral Lint (Advisory)..."
           spectral lint swagger_head.yaml --ruleset governance-hub/.spectral-warn.yaml -f json -o advisory.json || true
 
-      # -----------------------------------------------------------------------
-      # 4. UNIFIED REPORTING & ANNOTATIONS
-      # -----------------------------------------------------------------------
+      # ==========================================
+      # 4. UNIFIED REPORTING & ANNOTATIONS (FIXED)
+      # ==========================================
       - name: Process Results & Comment
         uses: actions/github-script@v7
         with:
@@ -479,11 +479,9 @@ jobs:
           script: |
             const fs = require('fs');
 
-            // --- HELPER: Unified Parser (Handles Vacuum Object OR Spectral Array) ---
+            // --- HELPER: Unified Parser ---
             function loadUnifiedResults(filename) {
-              // Default Structure
               let result = { issues: [], stats: null, engine: 'unknown', rules: {} };
-
               if (!fs.existsSync(filename)) return result;
               
               try {
@@ -492,47 +490,41 @@ jobs:
                 
                 const data = JSON.parse(raw);
 
-                // DETECTION LOGIC
+                // SPECTRAL (Array)
                 if (Array.isArray(data)) {
-                  // === SPECTRAL FORMAT (Array) ===
                   result.engine = 'Spectral';
                   result.issues = data.map(i => ({
                     ruleId: i.code,
                     severity: i.severity === 0 ? 'error' : 'warn',
                     message: i.message,
                     path: i.path.join(' > '),
-                    line: i.range.start.line + 1, // Spectral is 0-indexed
-                    fix: null // Spectral JSON output doesn't standardized 'howToFix'
+                    line: i.range.start.line + 1,
+                    fix: null
                   }));
                 } 
+                // VACUUM (Object)
                 else if (data.resultSet && data.resultSet.results) {
-                  // === VACUUM FORMAT (Object) ===
                   result.engine = 'Vacuum';
                   result.stats = data.statistics;
-                  
-                  // Capture Rules Metadata (where howToFix lives)
                   result.rules = data.rules || {};
 
                   result.issues = data.resultSet.results.map(i => {
-                    // Clean JSONPath
                     let cleanPath = i.path || 'root';
                     cleanPath = cleanPath.replace(/^\$\./, '').replace(/\[\'/g, ' > ').replace(/\'\]/g, '').replace(/\./g, ' > ');
                     
-                    // Lookup Fix in Rules Metadata (Check if it exists first)
                     const ruleDef = result.rules[i.ruleId] || {};
                     const fixMsg = ruleDef.howToFix || null;
 
                     return {
                       ruleId: i.ruleId,
-                      severity: i.ruleSeverity, // already 'error' or 'warn'
+                      severity: i.ruleSeverity, 
                       message: i.message,
                       path: cleanPath,
-                      line: i.range ? i.range.start.line : 1, // Vacuum usually 1-based
+                      line: i.range ? i.range.start.line : 1, 
                       fix: fixMsg
                     };
                   });
                 }
-                
                 return result;
               } catch (e) {
                 console.log(`Warning: Failed to parse ${filename}: ${e.message}`);
@@ -545,42 +537,43 @@ jobs:
             const advisory = loadUnifiedResults('advisory.json');
             const engineName = strict.engine !== 'unknown' ? strict.engine : '${{ inputs.linter }}';
 
-            // --- 2. GENERATE MARKDOWN TABLE ---
+            // --- 2. GENERATE MARKDOWN TABLE (Fixed) ---
             const ICONS = { error: '🛑', warn: '⚠️', info: 'ℹ️', hint: '💡' };
 
-            function generateTable(title, dataset, showLineNums) {
+            function generateTable(title, dataset) {
               const { issues, stats } = dataset;
-              if (!issues || issues.length === 0) return `### ${title}\n\n✅ **Passed** (No issues found)\n`;
-
-              let md = `### ${title}\n\n`;
               
-              // Show stats if available (Vacuum only)
+              // FIX 1: Add newlines (\n\n) before header to ensure Markdown renders correctly
+              let md = `\n\n### ${title}\n\n`;
+
+              if (!issues || issues.length === 0) {
+                return md + "✅ **Passed** (No issues found)\n";
+              }
+              
               if (stats) {
                 md += `> **Spec Score:** ${stats.overallScore}% | **Errors:** ${stats.totalErrors} | **Warnings:** ${stats.totalWarnings}\n\n`;
               }
 
-              md += `| Sev | Rule | Location | Line | Details |\n`;
-              md += `| :-: | :--- | :------- | :-: | :------ |\n`;
+              // FIX 2: Removed "Line" column entirely
+              md += `| Sev | Rule | Location | Details |\n`;
+              md += `| :-: | :--- | :------- | :------ |\n`;
 
               issues.forEach(i => {
                 const icon = ICONS[i.severity] || '❓';
-                let msg = i.message.replace(/\|/g, '&#124;'); // Escape pipes for MD table
+                let msg = i.message.replace(/\|/g, '&#124;');
                 
-                // Append "How To Fix" if available
                 if (i.fix) {
                   msg += `<br/>💡 <i>${i.fix.replace(/\|/g, '&#124;')}</i>`;
                 }
 
-                const lineDisplay = showLineNums ? i.line : '-';
-
-                md += `| ${icon} | **${i.ruleId}** | \`${i.path}\` | ${lineDisplay} | ${msg} |\n`;
+                md += `| ${icon} | **${i.ruleId}** | \`${i.path}\` | ${msg} |\n`;
               });
               
               return md;
             }
 
-            const strictTable = generateTable('🛑 Strict Checks (New Code)', strict, false);
-            const advisoryTable = generateTable('⚠️ Advisory Checks (Full Spec)', advisory, true);
+            const strictTable = generateTable('🛑 Strict Checks (New Code)', strict);
+            const advisoryTable = generateTable('⚠️ Advisory Checks (Full Spec)', advisory);
 
             // --- 3. JOB SUMMARY ---
             await core.summary
@@ -590,7 +583,7 @@ jobs:
               .write();
 
             // --- 4. PR COMMENTS ---
-            // 'context' is globally available in github-script
+            const context = github.context;
             if (context.payload.pull_request) {
               const pull_number = context.payload.pull_request.number;
               const owner = context.repo.owner;
@@ -607,24 +600,22 @@ jobs:
                 }
               }
 
-              // Strict Comment
               const strictCount = strict.issues.filter(i => i.severity === 'error').length;
               const strictStatus = strictCount > 0 ? `❌ **Failed** (${strictCount} errors)` : `✅ **Passed**`;
               const strictBody = `## ${strictStatus}\n\n**🛑 API Governance: Strict Checks**\n\nSee the [Job Summary](${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}) for details.`;
               await postOrUpdateComment('🛑 API Governance: Strict Checks', strictBody);
 
-              // Advisory Comment
               if (advisory.issues.length > 0) {
                 const advBody = `## ⚠️ found ${advisory.issues.length} issues\n\n**API Governance: Advisory Checks**\n\nSee the [Job Summary](${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}) for details.`;
                 await postOrUpdateComment('API Governance: Advisory Checks', advBody);
               }
             }
 
-            // --- 5. ANNOTATIONS (Advisory Only) ---
-            // We map advisory issues to the head file so they show up in Files Changed
+            // --- 5. ANNOTATIONS (Fixed) ---
             advisory.issues.forEach(issue => {
-              // Append Fix to Annotation Message if it exists
-              let fullMessage = issue.message;
+              // FIX 3: Added Path to the Annotation Message
+              let fullMessage = `[Path: ${issue.path}] ${issue.message}`;
+              
               if (issue.fix) {
                 fullMessage += `\n[How to Fix]: ${issue.fix}`;
               }
@@ -641,10 +632,9 @@ jobs:
               else core.warning(fullMessage, annotation);
             });
 
-            // --- 6. SOFT EXIT (DO NOT FAIL PIPELINE) ---
+            // --- 6. SOFT EXIT ---
             const errorCount = strict.issues.filter(i => i.severity === 'error').length;
             if (errorCount > 0) {
-              // We Log it as a warning but DO NOT call core.setFailed()
               console.log(`⚠️ Governance found ${errorCount} strict errors, but pipeline is in SOFT MODE. Exiting with success.`);
             } else {
               console.log("✅ Governance checks passed.");
