@@ -1,38 +1,373 @@
+# name: API Governance Engine
+
+# # 1. --- Define Inputs ---
+# on:
+#   workflow_call:
+#     inputs:
+#       swagger_path:
+#         required: true
+#         type: string
+#         description: "Path to the swagger file in the spoke repo (e.g. swagger.yaml)"
+#       baseline_filename:
+#         required: true
+#         type: string
+#         description: "Name of the baseline file in the Release (e.g. javatest-legacy.yaml)"
+#       baseline_version:
+#         required: false
+#         type: string
+#         default: 'baselines-v1'
+#         description: "The Release Tag to download from"
+
+# jobs:
+#   governance-engine:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: read # Required to download releases
+#       pull-requests: write
+    
+#     steps:
+#       # ---------------------------------------------------------
+#       # 1. Checkout Repositories
+#       # ---------------------------------------------------------
+#       - name: Checkout Spoke Repo
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0 # Needed for history
+
+#       - name: Checkout Governance Hub
+#         uses: actions/checkout@v4
+#         with:
+#           repository: KushalBang456/API-Governance-POC
+#           path: governance-hub
+
+#       # ---------------------------------------------------------
+#       # 2. Setup Environment (MISSING IN YOUR SNIPPET)
+#       # ---------------------------------------------------------
+#       - name: Setup Node
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '18'
+
+#       - name: Setup Python
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: '3.x'
+
+#       # ---------------------------------------------------------
+#       # 3. Install Dependencies
+#       # ---------------------------------------------------------
+#       - name: Install Dependencies
+#         run: |
+#           # Install openapi-diff locally (no -g) for scripting
+#           npm install openapi-diff
+#           # Install Spectral globally
+#           npm install -g @stoplight/spectral-cli
+#           # Install Python YAML support
+#           pip install PyYAML
+
+#       # ---------------------------------------------------------
+#       # 4. Prepare Specs (Extract HEAD and TARGET versions)
+#       # ---------------------------------------------------------
+#       - name: Prepare Specs
+#         run: |
+#           echo "📍 Processing Swagger: ${{ inputs.swagger_path }}"
+          
+#           # A. Capture Filename & Extension
+#           INPUT_FILE="${{ inputs.swagger_path }}"
+#           EXT="${INPUT_FILE##*.}"
+          
+#           # B. Determine Target Branch (Dynamic)
+#           TARGET_BRANCH="${{ github.base_ref }}"
+#           if [ -z "$TARGET_BRANCH" ]; then
+#             TARGET_BRANCH="main"
+#             echo "⚠️ Manual Trigger detected. Defaulting target to 'main'."
+#           fi
+
+#           # 1. Get HEAD version (Current file)
+#           if [ -f "$INPUT_FILE" ]; then
+#              cp "$INPUT_FILE" "swagger_head.$EXT"
+#           else
+#              echo "❌ Error: Swagger file not found at $INPUT_FILE"
+#              exit 1
+#           fi
+          
+#           # 2. Get TARGET version (Base Branch)
+#           echo "Fetching version from origin/$TARGET_BRANCH..."
+#           git show "origin/$TARGET_BRANCH:$INPUT_FILE" > "swagger_main.$EXT"
+          
+#           echo "✅ Extracted Head and Main specs."
+
+#       # ---------------------------------------------------------
+#       # 5. Download Baseline
+#       # ---------------------------------------------------------
+#       - name: ⬇️ Download Baseline from GitHub Release
+#         env:
+#           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         run: |
+#           echo "Fetching ${{ inputs.baseline_filename }} from tag ${{ inputs.baseline_version }}..."
+#           gh release download ${{ inputs.baseline_version }} \
+#             --repo KushalBang456/API-Governance-POC \
+#             --pattern "${{ inputs.baseline_filename }}"
+
+#       # ---------------------------------------------------------
+#       # 6. Generate Diff (Using NPM Inline Script)
+#       # ---------------------------------------------------------
+#       - name: Generate Diff
+#         run: |
+#           # 1. Detect extension again
+#           INPUT="${{ inputs.swagger_path }}"
+#           EXT="${INPUT##*.}"
+          
+#           echo "🔍 Generating diff between swagger_main.$EXT and swagger_head.$EXT..."
+          
+#           # 2. Run inline Node script
+#           # We use double quotes for the node command so Bash variables ($EXT) expand
+#           node -e "
+#             const fs = require('fs');
+#             const diff = require('openapi-diff');
+            
+#             // Bash variables expand here to actual filenames (e.g., swagger_main.yaml)
+#             const oldFile = 'swagger_main.$EXT';
+#             const newFile = 'swagger_head.$EXT';
+            
+#             console.log('Reading files: ' + oldFile + ' and ' + newFile);
+
+#             try {
+#               const oldSpec = fs.readFileSync(oldFile, 'utf8');
+#               const newSpec = fs.readFileSync(newFile, 'utf8');
+              
+#               diff.diffSpecs({
+#                 sourceSpec: { content: oldSpec, location: 'legacy', format: 'openapi3' },
+#                 destinationSpec: { content: newSpec, location: 'new', format: 'openapi3' }
+#               }).then(result => {
+#                 fs.writeFileSync('diff.json', JSON.stringify(result, null, 2));
+#                 console.log('✅ diff.json created successfully');
+#               });
+#             } catch (err) {
+#               console.error('❌ Error running diff:', err);
+#               process.exit(1);
+#             }
+#           "
+
+#       # --- DEBUG STEP: PRINT DIFF ---
+#       - name: 🐞 DEBUG - Print Diff.json
+#         run: |
+#           echo "=== CONTENT OF DIFF.JSON ==="
+#           if [ -f "diff.json" ]; then
+#             cat diff.json
+#           else
+#             echo "❌ diff.json missing!"
+#           fi
+#           echo "============================"
+
+#       # ---------------------------------------------------------
+#       # 7. Run Logic (Python)
+#       # ---------------------------------------------------------
+#       - name: Generate Partial Spec
+#         run: |
+#           python governance-hub/scripts/generate_partial_spec.py "${{ inputs.baseline_filename }}"
+
+#       # --- DEBUG STEP: PRINT PARTIAL SPEC ---
+#       - name: 🐞 DEBUG - Print Partial Spec
+#         run: |
+#           echo "=== CONTENT OF PARTIAL_SPEC.JSON ==="
+#           if [ -f "partial_spec.json" ]; then
+#             cat partial_spec.json
+#           else
+#             echo "⚠️ partial_spec.json not found!"
+#           fi
+#           echo "===================================="
+      
+#       # ---------------------------------------------------------
+#       # 8. Linting (Strict) - Save to JSON
+#       # ---------------------------------------------------------
+#       - name: 🛑 Strict Lint (Generate JSON)
+#         run: |
+#           # Run spectral and save output to strict.json
+#           # We use '|| true' because we don't want to crash the build yet.
+#           # We will handle the failure in the Report step.
+#           npx spectral lint partial_spec.json \
+#             --ruleset governance-hub/.spectral.yaml \
+#             --format json \
+#             --output strict.json || true
+
+#       # ---------------------------------------------------------
+#       # 9. Linting (Advisory) - Save to JSON
+#       # ---------------------------------------------------------
+#       - name: ⚠️ Advisory Lint (Generate JSON)
+#         run: |
+#           INPUT="${{ inputs.swagger_path }}"
+#           EXT="${INPUT##*.}"
+          
+#           # Run spectral and save output to advisory.json
+#           npx spectral lint "swagger_head.$EXT" \
+#             --ruleset governance-hub/.spectral-warn.yaml \
+#             --format json \
+#             --output advisory.json || true
+
+#       # ---------------------------------------------------------
+#       # 10. Generate Beautiful Report & Manage PR Comments (ROBUST)
+#       # ---------------------------------------------------------
+#       - name: 📊 Generate Report & PR Comments
+#         uses: actions/github-script@v7
+#         with:
+#           script: |
+#             const fs = require('fs');
+
+#             // --- 1. Load Results ---
+#             function loadResults(filename) {
+#               try { return fs.existsSync(filename) ? JSON.parse(fs.readFileSync(filename, 'utf8')) : []; } 
+#               catch (e) { return []; }
+#             }
+
+#             const strictResults = loadResults('strict.json');
+#             const advisoryResults = loadResults('advisory.json');
+
+#             // --- 2. Helper: Generate Summary Table ---
+#             function formatPath(pathArray) {
+#               return (!pathArray || pathArray.length === 0) ? "root" : pathArray.join(" > ");
+#             }
+
+#             function generateSummaryTable(results, title, icon, isStrict) {
+#               if (results.length === 0) return `\n### ${icon} ${title}\n\n✅ **No issues found!**\n`;
+              
+#               let md = `\n### ${icon} ${title} (${results.length} issues)\n\n`;
+#               md += `| Severity | Rule | Location | Message |\n`;
+#               md += `| :---: | :--- | :--- | :--- |\n`;
+              
+#               results.forEach(r => {
+#                 const isError = r.severity === 0;
+#                 const sevIcon = isError ? '🛑' : '⚠️';
+#                 const lineInfo = isStrict ? "" : `(Line ${r.range.start.line + 1})`;
+#                 const msg = r.message.replace(/\|/g, '&#124;'); 
+#                 const logicalPath = formatPath(r.path);
+                
+#                 md += `| ${sevIcon} | **${r.code}** | \`${logicalPath}\` | ${msg} ${lineInfo} |\n`;
+#               });
+#               return md;
+#             }
+
+#             // --- 3. Update Job Summary (Actions Tab) ---
+#             let summary = "# API Governance Report 🛡️\n";
+#             summary += "> **Strict Checks:** Run on new/modified code only. (Blocks PR)\n";
+#             summary += "> **Advisory Checks:** Run on the full file. (Tech Debt)\n";
+#             summary += generateSummaryTable(strictResults, "Strict Checks (New Code)", "🛑", true);
+#             summary += "\n---\n";
+#             summary += generateSummaryTable(advisoryResults, "Advisory Checks (Tech Debt)", "⚠️", false);
+#             await core.summary.addRaw(summary).write();
+
+
+#             // --- 4. PR Comment Logic (Title-Based Matching) ---
+#             if (!context.issue.number) {
+#               console.log("Not a PR, skipping comments.");
+#               return;
+#             }
+
+#             // Define Distinct Titles
+#             const STRICT_TITLE = "🛑 API Governance: Strict Checks";
+#             const ADVISORY_TITLE = "⚠️ API Governance: Advisory Checks";
+
+#             // Fetch Comments ONCE
+#             const { data: comments } = await github.rest.issues.listComments({
+#               owner: context.repo.owner,
+#               repo: context.repo.repo,
+#               issue_number: context.issue.number,
+#             });
+
+#             // Find comments by checking if the BODY contains the unique TITLE
+#             const existingStrictComment = comments.find(c => c.body.includes(STRICT_TITLE));
+#             const existingAdvisoryComment = comments.find(c => c.body.includes(ADVISORY_TITLE));
+
+#             async function handleComment(title, results, existingComment) {
+#               const errors = results.filter(r => r.severity === 0).length;
+#               const warnings = results.filter(r => r.severity !== 0).length;
+#               const total = errors + warnings;
+
+#               // Build Comment Body
+#               let body = `### ${title}\n`;
+#               if (total === 0) {
+#                 body += `✅ **No issues found!**\n\n_Governance check passed._`;
+#               } else {
+#                 body += `⚠️ **Issues Found**\n`;
+#                 body += `- **Errors:** ${errors}\n`;
+#                 body += `- **Warnings:** ${warnings}\n\n`;
+#                 body += `_Check the [Job Summary](${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details._`;
+#               }
+
+#               // LOGIC:
+#               // 1. If comment exists -> UPDATE it (even if fixed, to show Green status).
+#               // 2. If no comment -> CREATE it ONLY if there are issues. (Silence on success).
+              
+#               if (existingComment) {
+#                 console.log(`Updating existing comment for: ${title}`);
+#                 await github.rest.issues.updateComment({
+#                   owner: context.repo.owner,
+#                   repo: context.repo.repo,
+#                   comment_id: existingComment.id,
+#                   body: body
+#                 });
+#               } else if (total > 0) {
+#                 console.log(`Creating new comment for: ${title}`);
+#                 await github.rest.issues.createComment({
+#                   owner: context.repo.owner,
+#                   repo: context.repo.repo,
+#                   issue_number: context.issue.number,
+#                   body: body
+#                 });
+#               } else {
+#                 console.log(`No issues for ${title} and no previous comment. Staying silent.`);
+#               }
+#             }
+
+#             // Run Handlers
+#             console.log("--- Processing Strict Checks ---");
+#             await handleComment(STRICT_TITLE, strictResults, existingStrictComment);
+            
+#             console.log("--- Processing Advisory Checks ---");
+#             await handleComment(ADVISORY_TITLE, advisoryResults, existingAdvisoryComment);
+
+
+
 name: API Governance Engine
 
-# 1. --- Define Inputs ---
 on:
   workflow_call:
     inputs:
       swagger_path:
         required: true
         type: string
-        description: "Path to the swagger file in the spoke repo (e.g. swagger.yaml)"
+        description: "Path to swagger file in spoke repo (e.g. swagger.yaml)"
       baseline_filename:
         required: true
         type: string
-        description: "Name of the baseline file in the Release (e.g. javatest-legacy.yaml)"
+        description: "Name of baseline file in Release (e.g. javatest-legacy.yaml)"
       baseline_version:
         required: false
         type: string
         default: 'baselines-v1'
         description: "The Release Tag to download from"
+      linter:
+        required: false
+        type: string
+        default: 'spectral'   # <--- HUB CONTROL: Change this to 'spectral' to rollback everyone
+        description: "Linter engine to use: 'vacuum' (recommended) or 'spectral'"
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  governance-engine:
+  validate-api:
+    name: 🛡️ API Governance (${{ inputs.linter }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: read # Required to download releases
-      pull-requests: write
-    
     steps:
-      # ---------------------------------------------------------
-      # 1. Checkout Repositories
-      # ---------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # 1. SETUP & PREPARATION
+      # -----------------------------------------------------------------------
       - name: Checkout Spoke Repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Needed for history
+          fetch-depth: 0
 
       - name: Checkout Governance Hub
         uses: actions/checkout@v4
@@ -40,372 +375,277 @@ jobs:
           repository: KushalBang456/API-Governance-POC
           path: governance-hub
 
-      # ---------------------------------------------------------
-      # 2. Setup Environment (MISSING IN YOUR SNIPPET)
-      # ---------------------------------------------------------
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      # ---------------------------------------------------------
-      # 3. Install Dependencies
-      # ---------------------------------------------------------
       - name: Install Dependencies
         run: |
-          # Install openapi-diff locally (no -g) for scripting
           npm install openapi-diff
-          # Install Spectral globally
-          npm install -g @stoplight/spectral-cli
-          # Install Python YAML support
           pip install PyYAML
+          
+          # Install BOTH engines so the choice is available at runtime
+          echo "Installing Linters..."
+          npm install -g @stoplight/spectral-cli
+          npm install @quobix/vacuum
 
-      # ---------------------------------------------------------
-      # 4. Prepare Specs (Extract HEAD and TARGET versions)
-      # ---------------------------------------------------------
-      - name: Prepare Specs
+      # -----------------------------------------------------------------------
+      # 2. GENERATE SPECS (Diff & Partial)
+      # -----------------------------------------------------------------------
+      - name: Prepare Specs (Base vs Head)
         run: |
-          echo "📍 Processing Swagger: ${{ inputs.swagger_path }}"
+          # 1. Save HEAD spec
+          cp "${{ inputs.swagger_path }}" swagger_head.yaml
           
-          # A. Capture Filename & Extension
-          INPUT_FILE="${{ inputs.swagger_path }}"
-          EXT="${INPUT_FILE##*.}"
-          
-          # B. Determine Target Branch (Dynamic)
-          TARGET_BRANCH="${{ github.base_ref }}"
-          if [ -z "$TARGET_BRANCH" ]; then
-            TARGET_BRANCH="main"
-            echo "⚠️ Manual Trigger detected. Defaulting target to 'main'."
-          fi
+          # 2. Extract BASE spec
+          TARGET_BRANCH="${{ github.base_ref || 'main' }}"
+          echo "Target Branch: $TARGET_BRANCH"
+          git show "origin/$TARGET_BRANCH:${{ inputs.swagger_path }}" > swagger_main.yaml || echo "{}" > swagger_main.yaml
 
-          # 1. Get HEAD version (Current file)
-          if [ -f "$INPUT_FILE" ]; then
-             cp "$INPUT_FILE" "swagger_head.$EXT"
-          else
-             echo "❌ Error: Swagger file not found at $INPUT_FILE"
-             exit 1
-          fi
-          
-          # 2. Get TARGET version (Base Branch)
-          echo "Fetching version from origin/$TARGET_BRANCH..."
-          git show "origin/$TARGET_BRANCH:$INPUT_FILE" > "swagger_main.$EXT"
-          
-          echo "✅ Extracted Head and Main specs."
-
-      # ---------------------------------------------------------
-      # 5. Download Baseline
-      # ---------------------------------------------------------
-      - name: ⬇️ Download Baseline from GitHub Release
+      - name: Download Baseline
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Fetching ${{ inputs.baseline_filename }} from tag ${{ inputs.baseline_version }}..."
           gh release download ${{ inputs.baseline_version }} \
             --repo KushalBang456/API-Governance-POC \
-            --pattern "${{ inputs.baseline_filename }}"
+            --pattern "${{ inputs.baseline_filename }}" \
+            --dir . || echo "Baseline not found, proceeding empty."
 
-      # ---------------------------------------------------------
-      # 6. Generate Diff (Using NPM Inline Script)
-      # ---------------------------------------------------------
-      - name: Generate Diff
-        run: |
-          # 1. Detect extension again
-          INPUT="${{ inputs.swagger_path }}"
-          EXT="${INPUT##*.}"
-          
-          echo "🔍 Generating diff between swagger_main.$EXT and swagger_head.$EXT..."
-          
-          # 2. Run inline Node script
-          # We use double quotes for the node command so Bash variables ($EXT) expand
-          node -e "
-            const fs = require('fs');
-            const diff = require('openapi-diff');
-            
-            // Bash variables expand here to actual filenames (e.g., swagger_main.yaml)
-            const oldFile = 'swagger_main.$EXT';
-            const newFile = 'swagger_head.$EXT';
-            
-            console.log('Reading files: ' + oldFile + ' and ' + newFile);
-
-            try {
-              const oldSpec = fs.readFileSync(oldFile, 'utf8');
-              const newSpec = fs.readFileSync(newFile, 'utf8');
-              
-              diff.diffSpecs({
-                sourceSpec: { content: oldSpec, location: 'legacy', format: 'openapi3' },
-                destinationSpec: { content: newSpec, location: 'new', format: 'openapi3' }
-              }).then(result => {
-                fs.writeFileSync('diff.json', JSON.stringify(result, null, 2));
-                console.log('✅ diff.json created successfully');
-              });
-            } catch (err) {
-              console.error('❌ Error running diff:', err);
-              process.exit(1);
-            }
-          "
-
-      # --- DEBUG STEP: PRINT DIFF ---
-      - name: 🐞 DEBUG - Print Diff.json
-        run: |
-          echo "=== CONTENT OF DIFF.JSON ==="
-          if [ -f "diff.json" ]; then
-            cat diff.json
-          else
-            echo "❌ diff.json missing!"
-          fi
-          echo "============================"
-
-      # ---------------------------------------------------------
-      # 7. Run Logic (Python)
-      # ---------------------------------------------------------
-      - name: Generate Partial Spec
-        run: |
-          python governance-hub/scripts/generate_partial_spec.py "${{ inputs.baseline_filename }}"
-
-      # --- DEBUG STEP: PRINT PARTIAL SPEC ---
-      - name: 🐞 DEBUG - Print Partial Spec
-        run: |
-          echo "=== CONTENT OF PARTIAL_SPEC.JSON ==="
-          if [ -f "partial_spec.json" ]; then
-            cat partial_spec.json
-          else
-            echo "⚠️ partial_spec.json not found!"
-          fi
-          echo "===================================="
-      
-      # ---------------------------------------------------------
-      # 8. Linting (Strict) - Save to JSON
-      # ---------------------------------------------------------
-      - name: 🛑 Strict Lint (Generate JSON)
-        run: |
-          # Run spectral and save output to strict.json
-          # We use '|| true' because we don't want to crash the build yet.
-          # We will handle the failure in the Report step.
-          npx spectral lint partial_spec.json \
-            --ruleset governance-hub/.spectral.yaml \
-            --format json \
-            --output strict.json || true
-
-      # ---------------------------------------------------------
-      # 9. Linting (Advisory) - Save to JSON
-      # ---------------------------------------------------------
-      - name: ⚠️ Advisory Lint (Generate JSON)
-        run: |
-          INPUT="${{ inputs.swagger_path }}"
-          EXT="${INPUT##*.}"
-          
-          # Run spectral and save output to advisory.json
-          npx spectral lint "swagger_head.$EXT" \
-            --ruleset governance-hub/.spectral-warn.yaml \
-            --format json \
-            --output advisory.json || true
-
-      # # ---------------------------------------------------------
-      # # 10. Generate Beautiful Report & Annotations
-      # # ---------------------------------------------------------
-      # - name: 📊 Generate Governance Report
-      #   uses: actions/github-script@v7
-      #   with:
-      #     script: |
-      #       const fs = require('fs');
-
-      #       function loadResults(filename) {
-      #         if (fs.existsSync(filename)) {
-      #           try { return JSON.parse(fs.readFileSync(filename, 'utf8')); } 
-      #           catch (e) { return []; }
-      #         }
-      #         return [];
-      #       }
-
-      #       const strictResults = loadResults('strict.json');
-      #       const advisoryResults = loadResults('advisory.json');
-            
-      #       // --- Helper: Clean up the JSON path for display ---
-      #       // Converts ["paths", "/admin/health", "get"] -> "paths > /admin/health > get"
-      #       function formatPath(pathArray) {
-      #         if (!pathArray || pathArray.length === 0) return "root";
-      #         return pathArray.join(" > ");
-      #       }
-
-      #       // --- Function to Process Results ---
-      #       function processResults(results, title, icon, isStrict) {
-      #         if (results.length === 0) return `\n### ${icon} ${title}\n\n✅ **No issues found!**\n`;
-              
-      #         let md = `\n### ${icon} ${title} (${results.length} issues)\n\n`;
-              
-      #         // Table Header
-      #         md += `| Severity | Rule | Location | Message |\n`;
-      #         md += `| :---: | :--- | :--- | :--- |\n`;
-              
-      #         results.forEach(r => {
-      #           const isError = r.severity === 0;
-      #           const sevIcon = isError ? '🛑' : '⚠️';
-                
-      #           // For Strict (Partial Spec), line numbers are fake/temp, so we hide them.
-      #           // For Advisory (Full Spec), line numbers are real, so we keep them.
-      #           const lineInfo = isStrict ? "" : `(Line ${r.range.start.line + 1})`;
-                
-      #           const msg = r.message.replace(/\|/g, '&#124;'); 
-      #           const logicalPath = formatPath(r.path);
-                
-      #           // Build Row: Severity | Rule Code | Location (Clean) | Message + Line Info
-      #           md += `| ${sevIcon} | **${r.code}** | \`${logicalPath}\` | ${msg} ${lineInfo} |\n`;
-
-      #           // --- ANNOTATIONS ---
-      #           // We still post annotations so they show up in "Files Changed"
-      #           const annotationProps = { 
-      #             title: `${r.code}`,
-      #             file: r.source || 'swagger.yaml', 
-      #             startLine: r.range.start.line + 1 
-      #           };
-                
-      #           if (isError) core.error(r.message, annotationProps);
-      #           else core.warning(r.message, annotationProps);
-      #         });
-      #         return md;
-      #       }
-
-      #       // --- Generate Content ---
-      #       let summary = "# API Governance Report 🛡️\n";
-      #       summary += "> **Strict Checks:** Run on new/modified code only. (Blocks PR)\n";
-      #       summary += "> **Advisory Checks:** Run on the full file. (Tech Debt)\n";
-            
-      #       // Pass 'true' for strict to hide line numbers, 'false' for advisory to show them
-      #       summary += processResults(strictResults, "Strict Checks (New Code)", "🛑", true);
-      #       summary += "\n---\n";
-      #       summary += processResults(advisoryResults, "Advisory Checks (Tech Debt)", "⚠️", false);
-
-      #       // --- Post to Job Summary ---
-      #       await core.summary.addRaw(summary).write();
-
-      #       // --- Fail Build Logic (Commented out for POC) ---
-      #       // const strictErrors = strictResults.filter(r => r.severity === 0).length;
-      #       // if (strictErrors > 0) {
-      #       //   core.setFailed(`❌ Governance Check Failed: ${strictErrors} strict errors found.`);
-      #       // }
-
-      # ---------------------------------------------------------
-      # 10. Generate Beautiful Report & Manage PR Comments (ROBUST)
-      # ---------------------------------------------------------
-      - name: 📊 Generate Report & PR Comments
+      - name: Calculate Diff
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
+            const diff = require('openapi-diff');
+            
+            // Read files (handle missing baseline gracefully)
+            const mainSpec = fs.existsSync('swagger_main.yaml') ? fs.readFileSync('swagger_main.yaml', 'utf8') : "{}";
+            const headSpec = fs.readFileSync('swagger_head.yaml', 'utf8');
 
-            // --- 1. Load Results ---
-            function loadResults(filename) {
-              try { return fs.existsSync(filename) ? JSON.parse(fs.readFileSync(filename, 'utf8')) : []; } 
-              catch (e) { return []; }
-            }
-
-            const strictResults = loadResults('strict.json');
-            const advisoryResults = loadResults('advisory.json');
-
-            // --- 2. Helper: Generate Summary Table ---
-            function formatPath(pathArray) {
-              return (!pathArray || pathArray.length === 0) ? "root" : pathArray.join(" > ");
-            }
-
-            function generateSummaryTable(results, title, icon, isStrict) {
-              if (results.length === 0) return `\n### ${icon} ${title}\n\n✅ **No issues found!**\n`;
-              
-              let md = `\n### ${icon} ${title} (${results.length} issues)\n\n`;
-              md += `| Severity | Rule | Location | Message |\n`;
-              md += `| :---: | :--- | :--- | :--- |\n`;
-              
-              results.forEach(r => {
-                const isError = r.severity === 0;
-                const sevIcon = isError ? '🛑' : '⚠️';
-                const lineInfo = isStrict ? "" : `(Line ${r.range.start.line + 1})`;
-                const msg = r.message.replace(/\|/g, '&#124;'); 
-                const logicalPath = formatPath(r.path);
-                
-                md += `| ${sevIcon} | **${r.code}** | \`${logicalPath}\` | ${msg} ${lineInfo} |\n`;
+            // Generate Diff
+            diff.diffSpecs({ sourceSpec: { content: mainSpec, location: 'swagger_main.yaml', format: 'openapi3' }, destinationSpec: { content: headSpec, location: 'swagger_head.yaml', format: 'openapi3' } })
+              .then(result => {
+                fs.writeFileSync('diff.json', JSON.stringify(result, null, 2));
               });
+
+      - name: Generate Partial Spec (Filter Legacy)
+        run: |
+          python governance-hub/scripts/generate_partial_spec.py "${{ inputs.baseline_filename }}"
+
+      # -----------------------------------------------------------------------
+      # 3A. STRATEGY: VACUUM (Default)
+      # -----------------------------------------------------------------------
+      - name: 🚀 Strict Lint (Vacuum)
+        if: ${{ inputs.linter == 'vacuum' }}
+        run: |
+          echo "Running Vacuum Report (Strict)..."
+          # -n: machine readable, -o: stdout (pipe to file to control name)
+          npx vacuum report partial_spec.json -r governance-hub/.vacuum.yaml -n -o > strict.json || true
+
+      - name: ⚠️ Advisory Lint (Vacuum)
+        if: ${{ inputs.linter == 'vacuum' }}
+        run: |
+          echo "Running Vacuum Report (Advisory)..."
+          npx vacuum report swagger_head.yaml -r governance-hub/.vacuum-warn.yaml -n -o > advisory.json || true
+
+      # -----------------------------------------------------------------------
+      # 3B. STRATEGY: SPECTRAL (Legacy/Fallback)
+      # -----------------------------------------------------------------------
+      - name: 🔍 Strict Lint (Spectral)
+        if: ${{ inputs.linter == 'spectral' }}
+        run: |
+          echo "Running Spectral Lint (Strict)..."
+          spectral lint partial_spec.json --ruleset governance-hub/.spectral.yaml -f json -o strict.json || true
+
+      - name: ⚠️ Advisory Lint (Spectral)
+        if: ${{ inputs.linter == 'spectral' }}
+        run: |
+          echo "Running Spectral Lint (Advisory)..."
+          spectral lint swagger_head.yaml --ruleset governance-hub/.spectral-warn.yaml -f json -o advisory.json || true
+
+      # -----------------------------------------------------------------------
+      # 4. UNIFIED REPORTING & ANNOTATIONS
+      # -----------------------------------------------------------------------
+      - name: Process Results & Comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // --- HELPER: Unified Parser (Handles Vacuum Object OR Spectral Array) ---
+            function loadUnifiedResults(filename) {
+              // Default Structure
+              let result = { issues: [], stats: null, engine: 'unknown', rules: {} };
+
+              if (!fs.existsSync(filename)) return result;
+              
+              try {
+                const raw = fs.readFileSync(filename, 'utf8');
+                if (!raw || raw.trim() === '') return result;
+                
+                const data = JSON.parse(raw);
+
+                // DETECTION LOGIC
+                if (Array.isArray(data)) {
+                  // === SPECTRAL FORMAT (Array) ===
+                  result.engine = 'Spectral';
+                  result.issues = data.map(i => ({
+                    ruleId: i.code,
+                    severity: i.severity === 0 ? 'error' : 'warn',
+                    message: i.message,
+                    path: i.path.join(' > '),
+                    line: i.range.start.line + 1, // Spectral is 0-indexed
+                    fix: null // Spectral JSON output doesn't standardized 'howToFix'
+                  }));
+                } 
+                else if (data.resultSet && data.resultSet.results) {
+                  // === VACUUM FORMAT (Object) ===
+                  result.engine = 'Vacuum';
+                  result.stats = data.statistics;
+                  
+                  // Capture Rules Metadata (where howToFix lives)
+                  result.rules = data.rules || {};
+
+                  result.issues = data.resultSet.results.map(i => {
+                    // Clean JSONPath
+                    let cleanPath = i.path || 'root';
+                    cleanPath = cleanPath.replace(/^\$\./, '').replace(/\[\'/g, ' > ').replace(/\'\]/g, '').replace(/\./g, ' > ');
+                    
+                    // Lookup Fix in Rules Metadata (Check if it exists first)
+                    const ruleDef = result.rules[i.ruleId] || {};
+                    const fixMsg = ruleDef.howToFix || null;
+
+                    return {
+                      ruleId: i.ruleId,
+                      severity: i.ruleSeverity, // already 'error' or 'warn'
+                      message: i.message,
+                      path: cleanPath,
+                      line: i.range ? i.range.start.line : 1, // Vacuum usually 1-based
+                      fix: fixMsg
+                    };
+                  });
+                }
+                
+                return result;
+              } catch (e) {
+                console.log(`Warning: Failed to parse ${filename}: ${e.message}`);
+                return result;
+              }
+            }
+
+            // --- 1. LOAD DATA ---
+            const strict = loadUnifiedResults('strict.json');
+            const advisory = loadUnifiedResults('advisory.json');
+            const engineName = strict.engine !== 'unknown' ? strict.engine : '${{ inputs.linter }}';
+
+            // --- 2. GENERATE MARKDOWN TABLE ---
+            const ICONS = { error: '🛑', warn: '⚠️', info: 'ℹ️', hint: '💡' };
+
+            function generateTable(title, dataset, showLineNums) {
+              const { issues, stats } = dataset;
+              if (!issues || issues.length === 0) return `### ${title}\n\n✅ **Passed** (No issues found)\n`;
+
+              let md = `### ${title}\n\n`;
+              
+              // Show stats if available (Vacuum only)
+              if (stats) {
+                md += `> **Spec Score:** ${stats.overallScore}% | **Errors:** ${stats.totalErrors} | **Warnings:** ${stats.totalWarnings}\n\n`;
+              }
+
+              md += `| Sev | Rule | Location | Line | Details |\n`;
+              md += `| :-: | :--- | :------- | :-: | :------ |\n`;
+
+              issues.forEach(i => {
+                const icon = ICONS[i.severity] || '❓';
+                let msg = i.message.replace(/\|/g, '&#124;'); // Escape pipes for MD table
+                
+                // Append "How To Fix" if available
+                if (i.fix) {
+                  msg += `<br/>💡 <i>${i.fix.replace(/\|/g, '&#124;')}</i>`;
+                }
+
+                const lineDisplay = showLineNums ? i.line : '-';
+
+                md += `| ${icon} | **${i.ruleId}** | \`${i.path}\` | ${lineDisplay} | ${msg} |\n`;
+              });
+              
               return md;
             }
 
-            // --- 3. Update Job Summary (Actions Tab) ---
-            let summary = "# API Governance Report 🛡️\n";
-            summary += "> **Strict Checks:** Run on new/modified code only. (Blocks PR)\n";
-            summary += "> **Advisory Checks:** Run on the full file. (Tech Debt)\n";
-            summary += generateSummaryTable(strictResults, "Strict Checks (New Code)", "🛑", true);
-            summary += "\n---\n";
-            summary += generateSummaryTable(advisoryResults, "Advisory Checks (Tech Debt)", "⚠️", false);
-            await core.summary.addRaw(summary).write();
+            const strictTable = generateTable('🛑 Strict Checks (New Code)', strict, false);
+            const advisoryTable = generateTable('⚠️ Advisory Checks (Full Spec)', advisory, true);
 
+            // --- 3. JOB SUMMARY ---
+            await core.summary
+              .addHeading(`🛡️ API Governance Report (${engineName})`)
+              .addRaw(strictTable)
+              .addRaw(advisoryTable)
+              .write();
 
-            // --- 4. PR Comment Logic (Title-Based Matching) ---
-            if (!context.issue.number) {
-              console.log("Not a PR, skipping comments.");
-              return;
+            // --- 4. PR COMMENTS ---
+            const context = github.context;
+            if (context.payload.pull_request) {
+              const pull_number = context.payload.pull_request.number;
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+
+              async function postOrUpdateComment(header, body) {
+                const comments = await github.rest.issues.listComments({ owner, repo, issue_number: pull_number });
+                const botComment = comments.data.find(c => c.body.includes(header));
+
+                if (botComment) {
+                  await github.rest.issues.updateComment({ owner, repo, comment_id: botComment.id, body });
+                } else {
+                  await github.rest.issues.createComment({ owner, repo, issue_number: pull_number, body });
+                }
+              }
+
+              // Strict Comment
+              const strictCount = strict.issues.filter(i => i.severity === 'error').length;
+              const strictStatus = strictCount > 0 ? `❌ **Failed** (${strictCount} errors)` : `✅ **Passed**`;
+              const strictBody = `## ${strictStatus}\n\n**🛑 API Governance: Strict Checks**\n\nSee the [Job Summary](${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}) for details.`;
+              await postOrUpdateComment('🛑 API Governance: Strict Checks', strictBody);
+
+              // Advisory Comment
+              if (advisory.issues.length > 0) {
+                const advBody = `## ⚠️ found ${advisory.issues.length} issues\n\n**API Governance: Advisory Checks**\n\nSee the [Job Summary](${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}) for details.`;
+                await postOrUpdateComment('API Governance: Advisory Checks', advBody);
+              }
             }
 
-            // Define Distinct Titles
-            const STRICT_TITLE = "🛑 API Governance: Strict Checks";
-            const ADVISORY_TITLE = "⚠️ API Governance: Advisory Checks";
+            // --- 5. ANNOTATIONS (Advisory Only) ---
+            // We map advisory issues to the head file so they show up in Files Changed
+            advisory.issues.forEach(issue => {
+              // Append Fix to Annotation Message if it exists
+              let fullMessage = issue.message;
+              if (issue.fix) {
+                fullMessage += `\n[How to Fix]: ${issue.fix}`;
+              }
 
-            // Fetch Comments ONCE
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
+              const annotation = {
+                path: '${{ inputs.swagger_path }}',
+                startLine: issue.line,
+                endLine: issue.line,
+                title: issue.ruleId,
+                message: fullMessage
+              };
+              
+              if (issue.severity === 'error') core.error(fullMessage, annotation);
+              else core.warning(fullMessage, annotation);
             });
 
-            // Find comments by checking if the BODY contains the unique TITLE
-            const existingStrictComment = comments.find(c => c.body.includes(STRICT_TITLE));
-            const existingAdvisoryComment = comments.find(c => c.body.includes(ADVISORY_TITLE));
-
-            async function handleComment(title, results, existingComment) {
-              const errors = results.filter(r => r.severity === 0).length;
-              const warnings = results.filter(r => r.severity !== 0).length;
-              const total = errors + warnings;
-
-              // Build Comment Body
-              let body = `### ${title}\n`;
-              if (total === 0) {
-                body += `✅ **No issues found!**\n\n_Governance check passed._`;
-              } else {
-                body += `⚠️ **Issues Found**\n`;
-                body += `- **Errors:** ${errors}\n`;
-                body += `- **Warnings:** ${warnings}\n\n`;
-                body += `_Check the [Job Summary](${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details._`;
-              }
-
-              // LOGIC:
-              // 1. If comment exists -> UPDATE it (even if fixed, to show Green status).
-              // 2. If no comment -> CREATE it ONLY if there are issues. (Silence on success).
-              
-              if (existingComment) {
-                console.log(`Updating existing comment for: ${title}`);
-                await github.rest.issues.updateComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: existingComment.id,
-                  body: body
-                });
-              } else if (total > 0) {
-                console.log(`Creating new comment for: ${title}`);
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  body: body
-                });
-              } else {
-                console.log(`No issues for ${title} and no previous comment. Staying silent.`);
-              }
+            // --- 6. SOFT EXIT (DO NOT FAIL PIPELINE) ---
+            const errorCount = strict.issues.filter(i => i.severity === 'error').length;
+            if (errorCount > 0) {
+              // We Log it as a warning but DO NOT call core.setFailed()
+              console.log(`⚠️ Governance found ${errorCount} strict errors, but pipeline is in SOFT MODE. Exiting with success.`);
+            } else {
+              console.log("✅ Governance checks passed.");
             }
-
-            // Run Handlers
-            console.log("--- Processing Strict Checks ---");
-            await handleComment(STRICT_TITLE, strictResults, existingStrictComment);
-            
-            console.log("--- Processing Advisory Checks ---");
-            await handleComment(ADVISORY_TITLE, advisoryResults, existingAdvisoryComment);
