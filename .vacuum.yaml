@@ -1,0 +1,133 @@
+extends: "spectral:oas"
+# extends: [[vacuum:oas, recommended]]
+
+rules:
+  info-contact: off
+  contact-properties: off
+  info-description: off
+  info-license: off
+  license-url: off
+  operation-description: off
+  operation-tag-defined: off
+  operation-operationId: off
+  oas3-api-servers: off
+  oas3-unused-component: off
+  openapi-tags: off
+  oas3-missing-example: off
+  description-duplication: off
+  component-description: off
+  paths-kebab-case: off
+  oas3-schema: off
+  oas3-parameter-description: off
+
+  # Path naming: camelCase segments
+  path-camel-case:
+    description: "Path segments should be camelCase"
+    message: "Path '{{path}}' is not camelCase"
+    severity: error
+    given: $.paths[*]
+    howToFix: Schema property names should use camelCase for consistency and better compatibility with code generation tools.
+    then:
+      function: casing
+      functionOptions:
+        type: camel
+        separator:
+          char: "/"
+          allowLeading: true
+
+  parameter-naming-camelCase:
+    description: "Parameters (path, query, header) must use camelCase"
+    message: "Parameter name '{{name}}' is not camelCase"
+    severity: error
+    given:
+      - $.paths[*][*].parameters[*]
+      - $.paths[*].parameters[*]
+      - $.components.parameters[*]
+    then:
+      field: name
+      function: pattern
+      functionOptions:
+        match: '^[a-z][a-zA-Z0-9]*$'
+
+  path-versioning:
+    description: "Paths must include a major version (e.g. /v1/...)"
+    message: "Path '{path}' must start with /v<number>/"
+    severity: error
+    given: $.paths
+    then:
+      field: "@key"
+      function: pattern
+      functionOptions:
+        match: '^/v[0-9]+/.*$'
+
+  tag-pascal-case:
+    description: "Tags should be PascalCase"
+    message: "Tag '{{value}}' is not PascalCase"
+    severity: error
+    given: $.paths[*][*].tags[*]
+    then:
+      function: casing
+      functionOptions:
+        type: pascal
+
+  require-json-body:
+    description: "Responses must include media-type application/json (other media types may also be present)"
+    message: "Response for code does not include media-type application/json"
+    severity: error
+    formats:
+      - oas3
+    given:
+      - $.paths[*][*].responses[*].content
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          required:
+            - application/json
+
+  # 2xx JSON responses must have top-level 'code' and 'data'
+  response-envelope-has-code-and-data:
+    description: "2xx JSON responses must have top-level 'code' and 'data' properties"
+    message: "2xx JSON response must define top-level 'code' and 'data' properties in its JSON schema"
+    severity: error
+    formats:
+      - oas3
+    resolved: true
+    given:
+      - $.paths[*][*].responses[*].content['application/json'].schema
+    then:
+      - field: properties.code
+        function: truthy
+      - field: properties.data
+        function: truthy
+
+  # 204 responses must not have a body
+  no-content-response-no-body:
+    description: "204 responses must not have a response body"
+    message: "Response code '204' must not have a response body"
+    severity: error
+    given: $.paths[*][*].responses['204'].content
+    then:
+      function: falsy
+
+  # 2xx responses (except 204) must define content property
+  response-must-have-content:
+    description: "2xx responses (except 204) must define response content"
+    message: "Response '{{property}}' must define a 'content' property with response schema"
+    severity: error
+    given: $.paths[*][*].responses[*]
+    then:
+      field: content
+      function: truthy
+
+
+  # application/json responses must define a schema
+  response-json-must-have-schema:
+    description: "application/json responses must define a schema"
+    message: "Response content 'application/json' must define a 'schema' property"
+    severity: error
+    given: $.paths[*][*].responses[*].content['application/json']
+    then:
+      field: schema
+      function: truthy
