@@ -590,7 +590,7 @@ jobs:
               .write();
 
             // --- 4. PR COMMENTS ---
-            const context = github.context;
+            // 'context' is globally available in github-script
             if (context.payload.pull_request) {
               const pull_number = context.payload.pull_request.number;
               const owner = context.repo.owner;
