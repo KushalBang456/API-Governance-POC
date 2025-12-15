@@ -349,7 +349,7 @@ on:
       linter:
         required: false
         type: string
-        default: 'spectral'   # <--- HUB CONTROL: Change this to 'spectral' to rollback everyone
+        default: 'vacuum'   # <--- HUB CONTROL: Change this to 'spectral' to rollback everyone
         description: "Linter engine to use: 'vacuum' (recommended) or 'spectral'"
 
 permissions:
