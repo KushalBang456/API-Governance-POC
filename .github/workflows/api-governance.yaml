@@ -469,9 +469,9 @@ jobs:
           echo "Running Spectral Lint (Advisory)..."
           spectral lint swagger_head.yaml --ruleset governance-hub/.spectral-warn.yaml -f json -o advisory.json || true
 
-      # ==========================================
-      # 4. UNIFIED REPORTING & ANNOTATIONS (FIXED)
-      # ==========================================
+      # -----------------------------------------------------------------------
+      # 4. UNIFIED REPORTING & ANNOTATIONS
+      # -----------------------------------------------------------------------
       - name: Process Results & Comment
         uses: actions/github-script@v7
         with:
@@ -537,13 +537,12 @@ jobs:
             const advisory = loadUnifiedResults('advisory.json');
             const engineName = strict.engine !== 'unknown' ? strict.engine : '${{ inputs.linter }}';
 
-            // --- 2. GENERATE MARKDOWN TABLE (Fixed) ---
+            // --- 2. GENERATE MARKDOWN TABLE ---
             const ICONS = { error: '🛑', warn: '⚠️', info: 'ℹ️', hint: '💡' };
 
             function generateTable(title, dataset) {
               const { issues, stats } = dataset;
               
-              // FIX 1: Add newlines (\n\n) before header to ensure Markdown renders correctly
               let md = `\n\n### ${title}\n\n`;
 
               if (!issues || issues.length === 0) {
@@ -554,7 +553,6 @@ jobs:
                 md += `> **Spec Score:** ${stats.overallScore}% | **Errors:** ${stats.totalErrors} | **Warnings:** ${stats.totalWarnings}\n\n`;
               }
 
-              // FIX 2: Removed "Line" column entirely
               md += `| Sev | Rule | Location | Details |\n`;
               md += `| :-: | :--- | :------- | :------ |\n`;
 
@@ -583,7 +581,7 @@ jobs:
               .write();
 
             // --- 4. PR COMMENTS ---
-            const context = github.context;
+            // Removed explicit context declaration to fix SyntaxError
             if (context.payload.pull_request) {
               const pull_number = context.payload.pull_request.number;
               const owner = context.repo.owner;
@@ -611,9 +609,8 @@ jobs:
               }
             }
 
-            // --- 5. ANNOTATIONS (Fixed) ---
+            // --- 5. ANNOTATIONS ---
             advisory.issues.forEach(issue => {
-              // FIX 3: Added Path to the Annotation Message
               let fullMessage = `[Path: ${issue.path}] ${issue.message}`;
               
               if (issue.fix) {
