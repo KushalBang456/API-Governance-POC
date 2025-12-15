@@ -349,7 +349,7 @@ on:
       linter:
         required: false
         type: string
-        default: 'spectral'   # <--- HUB CONTROL: Change this to 'spectral' to rollback everyone
+        default: 'vacuum'
         description: "Linter engine to use: 'vacuum' (recommended) or 'spectral'"
 
 permissions:
@@ -390,7 +390,7 @@ jobs:
           npm install openapi-diff
           pip install PyYAML
           
-          # Install BOTH engines so the choice is available at runtime
+          # Install BOTH engines
           echo "Installing Linters..."
           npm install -g @stoplight/spectral-cli
           npm install @quobix/vacuum
@@ -400,10 +400,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Prepare Specs (Base vs Head)
         run: |
-          # 1. Save HEAD spec
           cp "${{ inputs.swagger_path }}" swagger_head.yaml
-          
-          # 2. Extract BASE spec
           TARGET_BRANCH="${{ github.base_ref || 'main' }}"
           echo "Target Branch: $TARGET_BRANCH"
           git show "origin/$TARGET_BRANCH:${{ inputs.swagger_path }}" > swagger_main.yaml || echo "{}" > swagger_main.yaml
@@ -424,28 +421,41 @@ jobs:
             const fs = require('fs');
             const diff = require('openapi-diff');
             
-            // Read files (handle missing baseline gracefully)
             const mainSpec = fs.existsSync('swagger_main.yaml') ? fs.readFileSync('swagger_main.yaml', 'utf8') : "{}";
             const headSpec = fs.readFileSync('swagger_head.yaml', 'utf8');
 
-            // Generate Diff
             diff.diffSpecs({ sourceSpec: { content: mainSpec, location: 'swagger_main.yaml', format: 'openapi3' }, destinationSpec: { content: headSpec, location: 'swagger_head.yaml', format: 'openapi3' } })
               .then(result => {
                 fs.writeFileSync('diff.json', JSON.stringify(result, null, 2));
               });
 
+      # 🔍 DEBUG: Print Diff
+      - name: 🐞 DEBUG - Show Diff JSON
+        run: |
+          echo "::group::Content of diff.json"
+          cat diff.json
+          echo "::endgroup::"
+
       - name: Generate Partial Spec (Filter Legacy)
         run: |
           python governance-hub/scripts/generate_partial_spec.py "${{ inputs.baseline_filename }}"
 
+      # 🔍 DEBUG: Print Partial Spec
+      - name: 🐞 DEBUG - Show Partial Spec
+        run: |
+          echo "::group::Content of partial_spec.json"
+          cat partial_spec.json
+          echo "::endgroup::"
+
       # -----------------------------------------------------------------------
-      # 3A. STRATEGY: VACUUM (Default)
+      # 3. LINTING STRATEGY
       # -----------------------------------------------------------------------
+      # VACUUM PATH
       - name: 🚀 Strict Lint (Vacuum)
         if: ${{ inputs.linter == 'vacuum' }}
         run: |
           echo "Running Vacuum Report (Strict)..."
-          # -n: machine readable, -o: stdout (pipe to file to control name)
+          # -n = machine readable, -o = stdout
           npx vacuum report partial_spec.json -r governance-hub/.vacuum.yaml -n -o > strict.json || true
 
       - name: ⚠️ Advisory Lint (Vacuum)
@@ -454,9 +464,7 @@ jobs:
           echo "Running Vacuum Report (Advisory)..."
           npx vacuum report swagger_head.yaml -r governance-hub/.vacuum-warn.yaml -n -o > advisory.json || true
 
-      # -----------------------------------------------------------------------
-      # 3B. STRATEGY: SPECTRAL (Legacy/Fallback)
-      # -----------------------------------------------------------------------
+      # SPECTRAL PATH
       - name: 🔍 Strict Lint (Spectral)
         if: ${{ inputs.linter == 'spectral' }}
         run: |
@@ -469,10 +477,23 @@ jobs:
           echo "Running Spectral Lint (Advisory)..."
           spectral lint swagger_head.yaml --ruleset governance-hub/.spectral-warn.yaml -f json -o advisory.json || true
 
+      # 🔍 DEBUG: Print Results
+      - name: 🐞 DEBUG - Show Linting Results
+        if: always()
+        run: |
+          echo "::group::Content of strict.json"
+          cat strict.json || echo "strict.json not found"
+          echo "::endgroup::"
+          
+          echo "::group::Content of advisory.json"
+          cat advisory.json || echo "advisory.json not found"
+          echo "::endgroup::"
+
       # -----------------------------------------------------------------------
-      # 4. UNIFIED REPORTING & ANNOTATIONS
+      # 4. REPORTING
       # -----------------------------------------------------------------------
       - name: Process Results & Comment
+        if: always() # Attempt to report even if linting "fails"
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -543,6 +564,7 @@ jobs:
             function generateTable(title, dataset) {
               const { issues, stats } = dataset;
               
+              // FIX: Newlines for header
               let md = `\n\n### ${title}\n\n`;
 
               if (!issues || issues.length === 0) {
@@ -553,6 +575,7 @@ jobs:
                 md += `> **Spec Score:** ${stats.overallScore}% | **Errors:** ${stats.totalErrors} | **Warnings:** ${stats.totalWarnings}\n\n`;
               }
 
+              // FIX: Removed Line Column
               md += `| Sev | Rule | Location | Details |\n`;
               md += `| :-: | :--- | :------- | :------ |\n`;
 
@@ -581,7 +604,6 @@ jobs:
               .write();
 
             // --- 4. PR COMMENTS ---
-            // Removed explicit context declaration to fix SyntaxError
             if (context.payload.pull_request) {
               const pull_number = context.payload.pull_request.number;
               const owner = context.repo.owner;
@@ -611,11 +633,9 @@ jobs:
 
             // --- 5. ANNOTATIONS ---
             advisory.issues.forEach(issue => {
+              // FIX: Path included in annotation
               let fullMessage = `[Path: ${issue.path}] ${issue.message}`;
-              
-              if (issue.fix) {
-                fullMessage += `\n[How to Fix]: ${issue.fix}`;
-              }
+              if (issue.fix) fullMessage += `\n[How to Fix]: ${issue.fix}`;
 
               const annotation = {
                 path: '${{ inputs.swagger_path }}',
